@@ -1,10 +1,27 @@
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { GatewayModule } from './gateway.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(GatewayModule);
-  const port = process.env.GATEWAY_PORT || 3000;
+
+  // Enable CORS for development
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
+
+  // Global validation pipe
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
+
+  const port = parseInt(process.env.GATEWAY_PORT || '3000');
   await app.listen(port);
-  console.log(`Gateway service is running on port ${port}`);
+  console.log(`API Gateway is running on port ${port}`);
 }
 bootstrap();
