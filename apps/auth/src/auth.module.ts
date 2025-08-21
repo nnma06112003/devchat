@@ -16,14 +16,16 @@ import { User } from './entities/user.entity';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    
+
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
-        host: configService.get('DB_HOST'),
-        port: configService.get('POSTGRES_PORT'),
-        username: configService.get('POSTGRES_USER'),
-        password: configService.get('POSTGRES_PASSWORD'),
+        host: configService.get('DB_HOST') ,
+        port: configService.get('POSTGRES_PORT') ,
+        username: configService.get('POSTGRES_USER') ,
+        password: configService.get('POSTGRES_PASSWORD') ,
         database: configService.get('POSTGRES_DB'),
         entities: [User],
         synchronize: configService.get('NODE_ENV') === 'development',

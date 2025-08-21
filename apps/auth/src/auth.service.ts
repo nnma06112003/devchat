@@ -11,8 +11,8 @@ import {
   LoginDto,
   AuthResponseDto,
   UserProfileDto,
-} from '@shared/dto/auth.dto';
-import { JwtPayload } from '@shared/interfaces/auth.interface';
+} from 'apps/auth/src/dto/auth.dto';
+import { JwtPayload } from 'apps/auth/src/interfaces/auth.interface';
 
 @Injectable()
 export class AuthService {
