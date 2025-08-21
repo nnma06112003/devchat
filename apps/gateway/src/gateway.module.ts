@@ -1,24 +1,39 @@
 import { Module } from '@nestjs/common';
-import { ClientsModule, Transport } from '@nestjs/microservices';
+
+import { ConfigModule } from '@nestjs/config';
 import { GatewayController } from './gateway.controller';
 import { GatewayService } from './gateway.service';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+
+const SERVICES = ['auth', 'chat']; // mở rộng dễ dàng: search, file, notification...
+const TOPICS = SERVICES.map(s => `svc.${s}.exec`);
 
 @Module({
   imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    JwtModule.register({
+      secret: 'dev-secret', // 2FA có thể bổ sung tại AuthService
+      signOptions: { expiresIn: '1h' },
+    }),
     ClientsModule.register([
       {
-        name: 'AUTH_SERVICE',
-        transport: Transport.TCP,
+        name: 'KAFKA_GATEWAY',
+        transport: Transport.KAFKA,
         options: {
-          host: 'localhost',
-          port: parseInt(process.env.AUTH_PORT || '3001'),
+          client: {
+            clientId: 'gateway',
+            brokers: ['localhost:29092'],
+          },
+          consumer: { groupId: 'gateway-consumer' },
         },
       },
     ]),
   ],
   controllers: [GatewayController],
-  providers: [GatewayService, JwtAuthGuard],
+  providers: [
+    GatewayService,
+    { provide: 'GATEWAY_TOPICS', useValue: TOPICS },
+  ],
 })
-export class GatewayModule {}
+export class AppModule {}

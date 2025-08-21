@@ -1,48 +1,49 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  UseGuards,
-  ValidationPipe,
-  UsePipes,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { CurrentUser } from './decorators/current-user.decorator';
-import {
-  RegisterDto,
-  LoginDto,
-  AuthResponseDto,
-  UserProfileDto,
-} from '@shared/dto/auth.dto';
+import { JwtGuard } from './guards/jwt-auth.guard';
 
-@Controller('auth')
-@UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+// Tất cả HTTP từ FE đi qua controller này → định tuyến tới Kafka
+@Controller('api')
 export class GatewayController {
-  constructor(private readonly gatewayService: GatewayService) {}
+  constructor(private readonly gw: GatewayService) {}
 
-  @Post('register')
-  async register(@Body() registerDto: RegisterDto): Promise<AuthResponseDto> {
-    return this.gatewayService.register(registerDto);
+  // ---------- AUTH ----------
+  // FE: POST /api/auth/login  { email, password, otp? }
+  @Post('auth/login')
+  async login(@Body() dto: any) {
+    // uỷ quyền cho AuthService: { cmd: 'login' }
+    return this.gw.exec('auth', 'login', dto, { waitMs: 6000 });
   }
 
-  @Post('login')
-  async login(@Body() loginDto: LoginDto): Promise<AuthResponseDto> {
-    return this.gatewayService.login(loginDto);
+  // FE: POST /api/auth/refresh { refreshToken }
+  @Post('auth/refresh')
+  async refresh(@Body() dto: any) {
+    return this.gw.exec('auth', 'refresh', dto);
   }
 
-  @Get('profile')
-  @UseGuards(JwtAuthGuard)
-  async getProfile(@CurrentUser() user: any): Promise<UserProfileDto> {
-    return this.gatewayService.getProfile(user.id);
+  // ---------- CHAT ----------
+  // FE: POST /api/channels/:channelId/messages { text, snippetId? }
+  @UseGuards(JwtGuard)
+  @Post('channels/:channelId/messages')
+  async sendMessage(@Param('channelId') channelId: string, @Body() dto: any) {
+    // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
+    const payload = { channelId, ...dto };
+    return this.gw.exec('chat', 'sendMessage', payload);
   }
 
-  @Get('health')
-  getHealth(): { status: string; timestamp: string } {
-    return {
-      status: 'OK',
-      timestamp: new Date().toISOString(),
-    };
+  // FE: GET /api/channels/:channelId/messages?cursor=...
+  @UseGuards(JwtGuard)
+  @Get('channels/:channelId/messages')
+  async listMessages(@Param('channelId') channelId: string, @Query() q: any) {
+    return this.gw.exec('chat', 'listMessages', { channelId, ...q });
   }
+
+  // FE: POST /api/channels { name, visibility, members[] }
+  @UseGuards(JwtGuard)
+  @Post('channels')
+  async createChannel(@Body() dto: any) {
+    return this.gw.exec('chat', 'createChannel', dto);
+  }
+
+  // (mở rộng) SEARCH, FILE, NOTIFICATION... tương tự
 }

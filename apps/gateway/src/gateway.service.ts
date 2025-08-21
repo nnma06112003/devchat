@@ -1,31 +1,29 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
-import { firstValueFrom } from 'rxjs';
-import {
-  RegisterDto,
-  LoginDto,
-  AuthResponseDto,
-  UserProfileDto,
-} from '@shared/dto/auth.dto';
-import { AUTH_COMMANDS } from '@shared/interfaces/auth.interface';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { ClientKafka } from '@nestjs/microservices';
+import { lastValueFrom, timeout } from 'rxjs';
 
 @Injectable()
-export class GatewayService {
-  constructor(@Inject('AUTH_SERVICE') private authClient: ClientProxy) {}
+export class GatewayService implements OnModuleInit {
+  constructor(
+    @Inject('KAFKA_GATEWAY') private readonly kafka: ClientKafka,
+    @Inject('GATEWAY_TOPICS') private readonly topics: string[],
+  ) {}
 
-  async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
-    return firstValueFrom(
-      this.authClient.send(AUTH_COMMANDS.REGISTER, registerDto),
-    );
+  async onModuleInit() {
+    // Đăng ký các topic cần pattern request-reply trước khi connect
+    this.topics.forEach(t => this.kafka.subscribeToResponseOf(t));
+    await this.kafka.connect();
   }
 
-  async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-    return firstValueFrom(this.authClient.send(AUTH_COMMANDS.LOGIN, loginDto));
+  async exec(service: string, cmd: string, data: any, opts?: { waitMs?: number }) {
+    const topic = `svc.${service}.exec`;
+    const wait = opts?.waitMs ?? 5000;
+    const res = this.kafka.send<any, any>(topic, { cmd, data }).pipe(timeout(wait));
+    return await lastValueFrom(res);
   }
 
-  async getProfile(userId: string): Promise<UserProfileDto> {
-    return firstValueFrom(
-      this.authClient.send(AUTH_COMMANDS.GET_PROFILE, { userId }),
-    );
+  emit(service: string, cmd: string, data: any) {
+    const topic = `svc.${service}.exec`;
+    return this.kafka.emit(topic, { cmd, data });
   }
 }

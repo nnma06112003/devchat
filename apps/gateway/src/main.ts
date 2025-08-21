@@ -1,28 +1,31 @@
 import { NestFactory } from '@nestjs/core';
+import { AppModule } from './gateway.module';
 import { ValidationPipe } from '@nestjs/common';
-import { GatewayModule } from './gateway.module';
-import { RestModule } from './rest/rest.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(RestModule);
+  const app = await NestFactory.create(AppModule);
 
-  // Enable CORS for development
-  app.enableCors({
-    origin: true,
-    credentials: true,
-  });
+  // Prefix chung cho API (tùy chọn)
+  app.setGlobalPrefix('api');
 
-  // Global validation pipe
+  // Bật validation tự động với class-validator (nếu dùng DTO)
   app.useGlobalPipes(
     new ValidationPipe({
-      transform: true,
-      whitelist: true,
+      whitelist: true,        // loại bỏ field thừa
       forbidNonWhitelisted: true,
+      transform: true,        // tự cast kiểu (string -> number,…)
     }),
   );
 
-  const port = parseInt(process.env.GATEWAY_PORT || '3000');
+  // (tùy chọn) bật CORS nếu FE khác domain
+  app.enableCors({
+    origin: '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+  });
+
+  const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`API Gateway is running on port ${port}`);
+  console.log(`🚀 Gateway running at http://localhost:${port}`);
 }
 bootstrap();

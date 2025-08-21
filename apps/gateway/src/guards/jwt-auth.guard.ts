@@ -1,39 +1,21 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  UnauthorizedException,
-  Inject,
-} from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
-import { firstValueFrom } from 'rxjs';
-import { AUTH_COMMANDS } from '@shared/interfaces/auth.interface';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
-export class JwtAuthGuard implements CanActivate {
-  constructor(@Inject('AUTH_SERVICE') private authClient: ClientProxy) {}
+export class JwtGuard implements CanActivate {
+  constructor(private readonly jwt: JwtService) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const token = this.extractTokenFromHeader(request);
-
-    if (!token) {
-      throw new UnauthorizedException('No token provided');
-    }
-
+  canActivate(context: ExecutionContext) {
+    const req = context.switchToHttp().getRequest();
+    const auth = req.headers['authorization'] as string | undefined;
+    if (!auth?.startsWith('Bearer ')) throw new UnauthorizedException('Missing token');
     try {
-      const user = await firstValueFrom(
-        this.authClient.send(AUTH_COMMANDS.VERIFY_TOKEN, { token }),
-      );
-      request.user = user;
+      const payload = this.jwt.verify(auth.slice(7));
+      req.user = payload; // { sub, roles, workspaceId, ... }
+      // Optionally check role here or via custom decorator
       return true;
-    } catch (error) {
-      throw new UnauthorizedException('Invalid token');
+    } catch {
+      throw new ForbiddenException('Invalid token');
     }
-  }
-
-  private extractTokenFromHeader(request: any): string | undefined {
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
   }
 }
