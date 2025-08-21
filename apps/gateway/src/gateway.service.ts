@@ -14,10 +14,11 @@ export class GatewayService implements OnModuleInit {
     this.topics.forEach(t => this.kafka.subscribeToResponseOf(t));
     await this.kafka.connect();
   }
-
+    // Gửi message tới topic và chờ phản hồi
   async exec(service: string, cmd: string, data: any, opts?: { waitMs?: number }) {
     const topic = `svc.${service}.exec`;
     const wait = opts?.waitMs ?? 5000;
+
     const res = this.kafka.send<any, any>(topic, { cmd, data }).pipe(timeout(wait));
     return await lastValueFrom(res);
   }

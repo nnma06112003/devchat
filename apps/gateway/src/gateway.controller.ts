@@ -12,11 +12,16 @@ export class GatewayController {
   @Post('auth/login')
   async login(@Body() dto: any) {
     // uỷ quyền cho AuthService: { cmd: 'login' }
-    return this.gw.exec('auth', 'login', dto, { waitMs: 6000 });
+    return this.gw.exec('auth', 'login', dto);
   }
 
   // FE: POST /api/auth/refresh { refreshToken }
-  @Post('auth/refresh')
+  @Post('auth/get_profile')
+  async get_profile(@Body() dto: any) {
+    return this.gw.exec('auth', 'get_profile', dto);
+  }
+
+   @Post('auth/refresh')
   async refresh(@Body() dto: any) {
     return this.gw.exec('auth', 'refresh', dto);
   }
