@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AuthModule } from './auth.module';
+import { Partitioners } from 'kafkajs'; 
 
 async function bootstrap() {
   const app = await NestFactory.createMicroservice<MicroserviceOptions>(
@@ -13,6 +14,9 @@ async function bootstrap() {
         brokers: ['localhost:29092'],
       },
       consumer: { groupId: 'auth-svc-consumer' },
+      producer: {
+        createPartitioner: Partitioners.JavaCompatiblePartitioner,     // chuẩn mới (khuyên dùng)
+      },
     },
   });
 

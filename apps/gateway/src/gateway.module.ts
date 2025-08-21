@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-
+import { Partitioners } from 'kafkajs';
 import { ConfigModule } from '@nestjs/config';
 import { GatewayController } from './gateway.controller';
 import { GatewayService } from './gateway.service';
@@ -26,6 +26,11 @@ const TOPICS = SERVICES.map(s => `svc.${s}.exec`);
             brokers: ['localhost:29092'],
           },
           consumer: { groupId: 'gateway-consumer' },
+          producer: {
+        // Chọn 1 trong 2:
+        // createPartitioner: Partitioners.LegacyPartitioner,
+        createPartitioner: Partitioners.JavaCompatiblePartitioner,
+      },
         },
       },
     ]),

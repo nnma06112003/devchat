@@ -29,7 +29,7 @@ import { User } from './entities/user.entity';
         database: configService.get('POSTGRES_DB'),
         entities: [User],
         synchronize: configService.get('NODE_ENV') === 'development',
-        logging: configService.get('NODE_ENV') === 'development',
+        logging:false,
       }),
     }),
     TypeOrmModule.forFeature([User]),
