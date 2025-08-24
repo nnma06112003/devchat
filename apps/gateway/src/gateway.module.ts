@@ -5,6 +5,7 @@ import { GatewayController } from './gateway.controller';
 import { GatewayService } from './gateway.service';
 import { JwtModule } from '@nestjs/jwt';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { ChatGateway } from './chat.gateway';
 
 const SERVICES = ['auth', 'chat']; // mở rộng dễ dàng: search, file, notification...
 const TOPICS = SERVICES.map(s => `svc.${s}.exec`);
@@ -38,6 +39,7 @@ const TOPICS = SERVICES.map(s => `svc.${s}.exec`);
   controllers: [GatewayController],
   providers: [
     GatewayService,
+    ChatGateway,
     { provide: 'GATEWAY_TOPICS', useValue: TOPICS },
   ],
 })

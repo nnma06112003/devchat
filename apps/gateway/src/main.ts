@@ -24,7 +24,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port =  3000;
+  const port =  3088;
   await app.listen(port);
   console.log(`🚀 Gateway running at http://localhost:${port}`);
 }
