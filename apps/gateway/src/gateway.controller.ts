@@ -8,6 +8,12 @@ export class GatewayController {
   constructor(private readonly gw: GatewayService) {}
 
   // ---------- AUTH ----------
+  // FE: POST /api/auth/github_oauth?code=...
+  @Get('auth/github_oauth')
+async githubOAuth(@Query('code') code: string) {
+  // gọi AuthService qua Kafka
+  return this.gw.exec('auth', 'github_oauth', { code });
+}
   // FE: POST /api/auth/login
   // Body: { email: string, password: string, otp?: string }
   @Post('auth/login')

@@ -9,6 +9,7 @@ import { UserRepository } from './repositories/user.repository';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { SeedService } from './database/seed.service';
 import { User } from './entities/user.entity';
+import { GithubStrategy } from './strategies/github.strategy';
 
 @Module({
   imports: [
@@ -43,7 +44,7 @@ import { User } from './entities/user.entity';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, UserRepository, JwtStrategy, SeedService],
+  providers: [AuthService, UserRepository, JwtStrategy, SeedService, GithubStrategy],
   exports: [AuthService, JwtModule, PassportModule],
 })
 export class AuthModule {}

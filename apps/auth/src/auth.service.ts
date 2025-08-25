@@ -1,8 +1,10 @@
+
 import {
   Injectable,
   UnauthorizedException,
   ConflictException,
 } from '@nestjs/common';
+import axios from 'axios';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UserRepository } from './repositories/user.repository';
@@ -20,8 +22,78 @@ export class AuthService {
     private userRepository: UserRepository,
     private jwtService: JwtService,
   ) {}
+  // Đăng nhập bằng Github OAuth
+  async loginGithubOAuth(code: string): Promise<any> {
+    // 1. Đổi code lấy access_token từ GitHub
+    const tokenRes = await axios.post(
+      'https://github.com/login/oauth/access_token',
+      {
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        code,
+      },
+      { headers: { Accept: 'application/json' } },
+    );
 
-  async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
+    const accessToken = tokenRes.data.access_token;
+
+    // 2. Lấy profile GitHub
+    const { data: profile } = await axios.get('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    // Có thể gọi thêm API này để lấy email chính xác hơn:
+    // const { data: emails } = await axios.get('https://api.github.com/user/emails', {
+    //   headers: { Authorization: `Bearer ${accessToken}` },
+    // });
+    // const primaryEmail = emails.find((e) => e.primary)?.email;
+
+    // Chuẩn hóa profile
+    const githubProfile = {
+      id: profile.id,
+      username: profile.login,
+      avatar: profile.avatar_url,
+      email: profile.email, // có thể null nếu user ẩn email
+    };
+
+    // 3. Kiểm tra user trong DB
+    let user = await this.userRepository.findByProvider('github', githubProfile.id);
+
+    if (!user) {
+      // Nếu chưa có thì tạo mới user
+      user = await this.userRepository.create({
+        email: githubProfile.email,
+        username: githubProfile.username,
+        avatar: githubProfile.avatar,
+        provider: 'github',
+        providerId: githubProfile.id,
+      } as any);
+    }
+
+    // 4. Sinh JWT
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    const access_token = this.jwtService.sign(payload);
+
+    // 5. Trả về FE
+    return {
+      access_token,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        avatar: user.avatar,
+        provider: user.provider,
+        providerId: user.providerId,
+        role: user.role,
+      },
+    };
+  }
+  async register(registerDto: RegisterDto): Promise<any> {
     const existingUser = await this.userRepository.findByEmail(
       registerDto.email,
     );
@@ -55,8 +127,8 @@ export class AuthService {
     };
   }
 
-  async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-    const user = await this.userRepository.findByEmail(loginDto.email);
+  async login(loginDto: LoginDto): Promise<any> {
+    const user:any = await this.userRepository.findByEmail(loginDto.email);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -109,7 +181,7 @@ export class AuthService {
     }
   }
 
-  async getProfile(userId: string): Promise<UserProfileDto> {
+  async getProfile(userId: string): Promise<any> {
     const user = await this.userRepository.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');

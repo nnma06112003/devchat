@@ -54,6 +54,9 @@ export class UserProfileDto {
   email: string;
   firstName: string;
   lastName: string;
+  avatar?: string | null;
+  provider?: string | null;
+  providerId?: string | null;
   role: UserRole;
   createdAt: Date;
   updatedAt: Date;

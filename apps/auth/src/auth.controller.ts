@@ -1,12 +1,12 @@
-import { Controller } from '@nestjs/common';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { AuthService } from './auth.service';
+
 
 
 @Controller()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-
 
   @MessagePattern('svc.auth.exec')
   async handle(@Payload() message: { cmd: string; data: any }) {
@@ -20,6 +20,8 @@ export class AuthController {
         return this.authService.validateToken(data.token);
       case 'get_profile':
         return this.authService.getProfile(data.userId);
+      case 'github_oauth':
+        return this.authService.loginGithubOAuth(data);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }
