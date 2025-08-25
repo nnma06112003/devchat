@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-
   postgres:
     image: postgres:15-alpine
     restart: always
@@ -87,7 +86,7 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "2181:2181"
+      - '2181:2181'
     networks:
       - dev-chat-network
 
@@ -97,8 +96,8 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"   # container network
-      - "29092:29092" # host network
+      - '9092:9092' # container network
+      - '29092:29092' # host network
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -108,6 +107,16 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - dev-chat-network
+  kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    restart: always
+    ports:
+      - '9000:9000'
+    environment:
+      KAFKA_BROKERCONNECT: kafka:9092
+      JVM_OPTS: '-Xms32M -Xmx64M'
     networks:
       - dev-chat-network
 volumes:
