@@ -18,6 +18,8 @@ export class AuthController {
         return this.authService.register(data);
       case 'verify_token':
         return this.authService.validateToken(data.token);
+      case 'refresh':
+        return this.authService.refreshToken(data.token);
       case 'get_profile':
         return this.authService.getProfile(data.userId);
       case 'github_oauth':

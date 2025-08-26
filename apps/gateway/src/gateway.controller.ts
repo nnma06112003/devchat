@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
-import { JwtGuard } from './guards/jwt-auth.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 // Tất cả HTTP từ FE đi qua controller này → định tuyến tới Kafka
 @Controller('api')
@@ -9,7 +9,7 @@ export class GatewayController {
 
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
-  @Get('auth/github_oauth')
+  @Get('auth/github-oauth')
 async githubOAuth(@Query('code') code: string) {
   // gọi AuthService qua Kafka
   return this.gw.exec('auth', 'github_oauth', { code });
@@ -24,23 +24,32 @@ async githubOAuth(@Query('code') code: string) {
 
   // FE: POST /api/auth/get_profile
   // Body: { userId: string }
-  @Post('auth/get_profile')
+  @Post('auth/get-profile')
   async get_profile(@Body() dto: any) {
     return this.gw.exec('auth', 'get_profile', dto);
   }
 
   // FE: POST /api/auth/refresh
   // Body: { refreshToken: string }
-  @Post('auth/refresh')
+  @Post('auth/refresh-token')
   async refresh(@Body() dto: any) {
     return this.gw.exec('auth', 'refresh', dto);
   }
+
+  // FE: POST /api/auth/verify-token
+
+  @Post('auth/verify-token')
+  async verifyToken(@Body() dto: { token: string }) {
+    return this.gw.exec('auth', 'verify_token', dto);
+  }
+
+
 
   // ---------- CHAT ----------
   // FE: POST /api/channels/:channelId/messages
   // Body: { text: string, snippetId?: string }
   // Param: channelId: string
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('channels/:channelId/messages')
   async sendMessage(@Param('channelId') channelId: string, @Body() dto: any) {
     // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
@@ -51,7 +60,7 @@ async githubOAuth(@Query('code') code: string) {
   // FE: GET /api/channels/:channelId/messages
   // Param: channelId: string
   // Query: { cursor?: string }
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('channels/:channelId/messages')
   async listMessages(@Param('channelId') channelId: string, @Query() q: any) {
     return this.gw.exec('chat', 'listMessages', { channelId, ...q });
@@ -59,7 +68,7 @@ async githubOAuth(@Query('code') code: string) {
 
   // FE: POST /api/channels
   // Body: { name: string, visibility: string, members: string[] }
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('channels')
   async createChannel(@Body() dto: any) {
     return this.gw.exec('chat', 'createChannel', dto);

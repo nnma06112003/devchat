@@ -1,3 +1,5 @@
+  // Tạo refreshToken và lưu vào user
+  
 
 import {
   Injectable,
@@ -147,14 +149,20 @@ export class AuthService {
       role: user.role,
     };
     const access_token = this.jwtService.sign(payload);
+    const refresh_token = await this.generateAndSaveRefreshToken(user);
 
     return {
       access_token,
+      refresh_token,
       user: {
         id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        username: user.username,
+        avatar: user.avatar,
+        provider: user.provider,
+        providerId: user.providerId,
         role: user.role,
       },
     };
@@ -168,15 +176,20 @@ export class AuthService {
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
-
-      return {
+      const userData = 
+      {
         id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
       };
+      return userData;
     } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        // Trả về lỗi 409 nếu token hết hạn
+        throw new ConflictException('Token expired');
+      }
       throw new UnauthorizedException('Invalid token');
     }
   }
@@ -197,4 +210,41 @@ export class AuthService {
       updatedAt: user.updatedAt,
     };
   }
+private async generateAndSaveRefreshToken(user: any): Promise<string> {
+    const refreshToken = this.jwtService.sign({ sub: user.id }, { expiresIn: '7d' });
+    user.refreshToken = refreshToken;
+    await this.userRepository.save(user);
+    return refreshToken;
+  }
+
+  // Refresh token
+  async refreshToken(dto: { refreshToken: string }): Promise<any> {
+    // Tìm user theo refreshToken
+    const user = await this.userRepository.findByRefreshToken(dto.refreshToken);
+    if (!user) throw new UnauthorizedException('Invalid refresh token');
+    // Tạo access_token mới
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+    const access_token = this.jwtService.sign(payload);
+    return {
+      access_token,
+      refresh_token: user.refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
+        avatar: user.avatar,
+        provider: user.provider,
+        providerId: user.providerId,
+        role: user.role,
+      },
+    };
+  }
+
+
 }

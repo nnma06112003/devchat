@@ -21,6 +21,10 @@ async findByProvider(provider: string, providerId: string): Promise<User | null>
     return this.repository.findOne({ where: { id } });
   }
 
+    async findByRefreshToken(refreshToken: string): Promise<User | null> {
+    return this.repository.findOne({ where: { refreshToken } });
+  }
+
   async create(userData: RegisterDto & { password: string }): Promise<User> {
     const user = this.repository.create({
       ...userData,

@@ -31,8 +31,14 @@ export class User {
   @Column({ nullable: true })
   username?: string;
 
+  
+
   @Column({ nullable: true })
   avatar?: string;
+
+  @Column({ nullable: true })
+  refreshToken?: string;
+
 
   @Column({ nullable: true })
   provider?: string;
