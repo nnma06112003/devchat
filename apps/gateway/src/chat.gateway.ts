@@ -15,16 +15,29 @@ export class ChatGateway {
 
   constructor(private readonly gw: GatewayService) {}
 
-  // Nhận tin nhắn từ client qua socket
-  @SubscribeMessage('sendMessage')
-  async handleSendMessage(
-    @MessageBody() data: any,
+  // Client join vào phòng chat theo channelId
+  @SubscribeMessage('joinRoom')
+  async handleJoinRoom(
+    @MessageBody() data: { channelId: string; userId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    // Gửi message tới ChatService qua Kafka
+    client.join(data.channelId); // socket join vào room
+    console.log(`User ${data.userId} joined room ${data.channelId}`);
+
+    // Báo lại cho client là đã join thành công
+    client.emit('joinedRoom', { channelId: data.channelId });
+  }
+
+  // Nhận tin nhắn từ client
+  @SubscribeMessage('sendMessage')
+  async handleSendMessage(
+    @MessageBody() data: { channelId: string; senderId: string; text: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    // Gửi message tới service qua Kafka
     const result = await this.gw.exec('chat', 'sendMessage', data);
-    // Emit lại kết quả cho client (hoặc broadcast cho các client khác)
-    client.emit('messageSent', result);
-    // Hoặc: this.server.emit('newMessage', result);
+
+    // Emit tin nhắn mới cho tất cả client trong cùng phòng channelId
+    this.server.to(data.channelId).emit('receiveMessage', result);
   }
 }

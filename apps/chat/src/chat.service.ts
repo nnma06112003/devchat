@@ -44,4 +44,61 @@ export class ChatService {
       .where(':userId = ANY(channel.members)', { userId })
       .getMany();
   }
+
+  /**
+   * Lấy lịch sử tin nhắn của một channel với phân trang và filter.
+   * - page/pageSize: phân trang dựa trên offset
+   * - after: id của tin nhắn cuối (cursor) -> trả các tin nhắn sau tin nhắn này (by createdAt)
+   * - since: timestamp ISO/string/Date -> trả các tin nhắn từ lúc này trở đi
+   * - order: 'ASC' | 'DESC' (mặc định 'ASC')
+   * Trả về { items, total, page, pageSize, hasMore }
+   */
+  async fetchHistory(
+    channelId: string,
+    options?: {
+      page?: number;
+      pageSize?: number;
+      after?: string; // messageId cursor
+      since?: string | Date;
+      order?: 'ASC' | 'DESC';
+    },
+  ) {
+    const page = Math.max(1, options?.page ?? 1);
+    const pageSize = Math.min(200, Math.max(1, options?.pageSize ?? 50));
+
+    const qb = this.messageRepo.createQueryBuilder('message')
+      .leftJoinAndSelect('message.channel', 'channel')
+      .where('channel.id = :channelId', { channelId });
+
+    // Filter by 'after' cursor (message id). We'll resolve the timestamp of that message
+    if (options?.after) {
+      const afterMsg = await this.messageRepo.findOne({ where: { id: options.after } });
+      if (afterMsg) {
+        qb.andWhere('message.createdAt > :afterDate', { afterDate: afterMsg.createdAt.toISOString() });
+      }
+    }
+
+    // Filter by since timestamp
+    if (options?.since) {
+      const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+      if (!isNaN(sinceDate.getTime())) {
+        qb.andWhere('message.createdAt >= :since', { since: sinceDate.toISOString() });
+      }
+    }
+
+    const order: 'ASC' | 'DESC' = options?.order ?? 'ASC';
+    qb.orderBy('message.createdAt', order)
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    const [items, total] = await qb.getManyAndCount();
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      hasMore: page * pageSize < total,
+    };
+  }
 }

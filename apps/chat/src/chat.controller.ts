@@ -14,7 +14,7 @@ export class ChatController {
       case 'sendMessage':
         return await this.chatService.sendMessage(payload.data);
       case 'listMessages':
-        return await this.chatService.listMessages(payload.data.channelId);
+        return await this.chatService.fetchHistory(payload.data.channelId);
       case 'listChannels':
         return await this.chatService.listChannels(payload.data.userId);
       default:
