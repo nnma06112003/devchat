@@ -13,8 +13,6 @@ import { UserRepository } from './repositories/user.repository';
 import {
   RegisterDto,
   LoginDto,
-  AuthResponseDto,
-  UserProfileDto,
 } from 'apps/auth/src/dto/auth.dto';
 import { JwtPayload } from 'apps/auth/src/interfaces/auth.interface';
 
@@ -59,7 +57,7 @@ export class AuthService {
     };
 
     // 3. Kiểm tra user trong DB
-    let user = await this.userRepository.findByProvider('github', githubProfile.id);
+    let user:any = await this.userRepository.findByProvider('github', githubProfile.id);
 
     if (!user) {
       // Nếu chưa có thì tạo mới user
@@ -73,7 +71,7 @@ export class AuthService {
     }
 
     // 4. Sinh JWT
-    const payload: JwtPayload = {
+    const payload: any = {
       sub: user.id,
       email: user.email,
       role: user.role,
@@ -105,12 +103,12 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    const user = await this.userRepository.create({
+    const user:any = await this.userRepository.create({
       ...registerDto,
       password: hashedPassword,
     });
 
-    const payload: JwtPayload = {
+    const payload: any = {
       sub: user.id,
       email: user.email,
       role: user.role,
@@ -171,7 +169,7 @@ export class AuthService {
   async validateToken(token: string): Promise<any> {
     try {
       const payload = this.jwtService.verify(token);
-      const user = await this.userRepository.findById(payload.sub);
+      const user:any = await this.userRepository.findById(payload.sub);
 
       if (!user) {
         throw new UnauthorizedException('User not found');
@@ -185,7 +183,7 @@ export class AuthService {
         role: user.role,
       };
       return userData;
-    } catch (error) {
+    } catch (error: any) {
       if (error.name === 'TokenExpiredError') {
         // Trả về lỗi 409 nếu token hết hạn
         throw new ConflictException('Token expired');
@@ -195,7 +193,7 @@ export class AuthService {
   }
 
   async getProfile(userId: string): Promise<any> {
-    const user = await this.userRepository.findById(userId);
+    const user:any = await this.userRepository.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
@@ -220,10 +218,10 @@ private async generateAndSaveRefreshToken(user: any): Promise<string> {
   // Refresh token
   async refreshToken(dto: { refreshToken: string }): Promise<any> {
     // Tìm user theo refreshToken
-    const user = await this.userRepository.findByRefreshToken(dto.refreshToken);
+    const user:any = await this.userRepository.findByRefreshToken(dto.refreshToken);
     if (!user) throw new UnauthorizedException('Invalid refresh token');
     // Tạo access_token mới
-    const payload: JwtPayload = {
+    const payload: any = {
       sub: user.id,
       email: user.email,
       role: user.role,

@@ -1,387 +1,99 @@
-# NestJS Microservices with TypeORM + PostgreSQL
+<p align="center">
+  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+</p>
 
-A production-ready NestJS monorepo featuring microservice architecture with TypeORM, PostgreSQL, and comprehensive authentication system.
+[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
+[circleci-url]: https://circleci.com/gh/nestjs/nest
 
-## Architecture Overview
+  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
+    <p align="center">
+<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
+<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
+<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
+<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
+<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
+<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
+<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
+<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
+  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
+    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
+  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
+</p>
+  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
+  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-### Services
+## Description
 
-1. **Authentication Service** (`apps/auth`)
-   - Runs as a NestJS microservice using TCP transport
-   - Uses TypeORM with PostgreSQL for persistence
-   - Provides user management, authentication, and JWT token validation
-   - Includes role-based access control (RBAC)
-   - Features database seeding for initial admin user
+[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
-2. **API Gateway** (`apps/gateway`)
-   - HTTP REST API server that exposes external endpoints
-   - Delegates authentication requests to Auth Service via TCP microservice communication
-   - Validates JWT tokens for protected routes
-   - CORS enabled for frontend integration
-
-3. **Shared Library** (`libs/shared`)
-   - Common DTOs, interfaces, guards, and decorators
-   - Shared across all services for consistency
-   - Includes role-based authorization decorators
-
-### Database Schema
-
-#### User Entity
-
-```sql
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email VARCHAR UNIQUE NOT NULL,
-  password VARCHAR NOT NULL,
-  firstName VARCHAR NOT NULL,
-  lastName VARCHAR NOT NULL,
-  role users_role_enum NOT NULL DEFAULT 'user',
-  createdAt TIMESTAMP NOT NULL DEFAULT now(),
-  updatedAt TIMESTAMP NOT NULL DEFAULT now()
-);
-
-CREATE TYPE users_role_enum AS ENUM('admin', 'user');
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v18+ recommended)
-- pnpm (or npm/yarn)
-- Docker & Docker Compose
-
-### Installation
+## Project setup
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Build the shared library
-pnpm run build:shared
+$ yarn install
 ```
 
-### Database Setup
+## Compile and run the project
 
 ```bash
-# Start PostgreSQL with Docker Compose
-pnpm run db:create
+# development
+$ yarn run start
 
-# Run database seeding (creates admin and test users)
-pnpm run db:seed
+# watch mode
+$ yarn run start:dev
+
+# production mode
+$ yarn run start:prod
 ```
 
-**Default Users Created:**
-
-- **Admin**: `admin@example.com` / `admin123` (role: admin)
-- **User**: `user@example.com` / `user123` (role: user)
-
-### Running the Services
-
-#### Development Mode
+## Run tests
 
 ```bash
-# Terminal 1: Start the Authentication Service
-pnpm run start:auth
+# unit tests
+$ yarn run test
 
-# Terminal 2: Start the API Gateway
-pnpm run start:gateway
+# e2e tests
+$ yarn run test:e2e
+
+# test coverage
+$ yarn run test:cov
 ```
 
-#### Production Mode
+## Deployment
+
+When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+
+If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
 
 ```bash
-# Build all services
-pnpm run build:auth
-pnpm run build:gateway
-
-# Start services
-pnpm run start:auth:prod
-pnpm run start:gateway:prod
+$ yarn install -g mau
+$ mau deploy
 ```
 
-## API Endpoints
+With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
 
-All endpoints are available through the API Gateway at `http://localhost:3000`
+## Resources
 
-### Authentication Endpoints
+Check out a few resources that may come in handy when working with NestJS:
 
-#### Register User
+- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
+- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
+- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
+- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
+- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
+- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
+- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
+- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
 
-```http
-POST /auth/register
-Content-Type: application/json
+## Support
 
-{
-  "email": "user@example.com",
-  "password": "password123",
-  "firstName": "John",
-  "lastName": "Doe",
-  "role": "user"  // optional, defaults to "user"
-}
-```
+Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
 
-Response:
+## Stay in touch
 
-```json
-{
-  "access_token": "jwt-token-here",
-  "user": {
-    "id": "uuid-here",
-    "email": "user@example.com",
-    "firstName": "John",
-    "lastName": "Doe",
-    "role": "user"
-  }
-}
-```
-
-#### Login
-
-```http
-POST /auth/login
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
-
-Response: Same as registration
-
-#### Get Profile (Protected)
-
-```http
-GET /auth/profile
-Authorization: Bearer <jwt-token>
-```
-
-Response:
-
-```json
-{
-  "id": "uuid-here",
-  "email": "user@example.com",
-  "firstName": "John",
-  "lastName": "Doe",
-  "role": "user",
-  "createdAt": "2025-08-17T10:00:00.000Z",
-  "updatedAt": "2025-08-17T10:00:00.000Z"
-}
-```
-
-#### Health Check
-
-```http
-GET /auth/health
-```
-
-## Configuration
-
-Environment variables can be configured in `.env`:
-
-```env
-# API Gateway Configuration
-GATEWAY_PORT=3000
-
-# Authentication Service Configuration
-AUTH_PORT=3001
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-
-# Database Configuration
-DB_HOST=localhost
-POSTGRES_DB=dev_chat
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=password
-POSTGRES_PORT=5432
-
-# Development Environment
-NODE_ENV=development
-```
-
-## Database Operations
-
-```bash
-# Start/stop PostgreSQL
-pnpm run db:create
-pnpm run db:stop
-
-# Reset database (⚠️ destroys all data)
-pnpm run db:drop
-
-# Run seeding
-pnpm run db:seed
-
-# TypeORM operations
-pnpm run migration:generate -- src/migrations/MigrationName
-pnpm run migration:run
-pnpm run migration:revert
-```
-
-## Docker Services
-
-The `docker-compose.yml` includes:
-
-- **PostgreSQL**: Database server with persistent storage
-- **PgAdmin**: Web-based PostgreSQL administration (http://localhost:8080)
-- **MongoDB**: Additional NoSQL database (if needed)
-- **Redis**: Caching and session storage (if needed)
-
-Access PgAdmin at http://localhost:8080 with:
-
-- Email: `pgadmin@example.com`
-- Password: `password`
-
-## Testing
-
-```bash
-# Run unit tests
-pnpm test
-
-# Run tests in watch mode
-pnpm test:watch
-
-# Run e2e tests
-pnpm test:e2e
-
-# Generate coverage report
-pnpm test:cov
-
-# Test API endpoints
-powershell -ExecutionPolicy Bypass -File test-api.ps1
-```
-
-## Project Structure
-
-```
-├── apps/
-│   ├── auth/                           # Authentication Microservice
-│   │   ├── src/
-│   │   │   ├── main.ts                 # Microservice bootstrap
-│   │   │   ├── auth.module.ts          # TypeORM configuration
-│   │   │   ├── auth.controller.ts      # MessagePattern handlers
-│   │   │   ├── auth.service.ts         # Business logic
-│   │   │   ├── entities/
-│   │   │   │   └── user.entity.ts      # User entity with roles
-│   │   │   ├── repositories/
-│   │   │   │   └── user.repository.ts  # TypeORM repository
-│   │   │   ├── strategies/
-│   │   │   │   └── jwt.strategy.ts     # JWT validation strategy
-│   │   │   └── database/
-│   │   │       ├── data-source.ts      # TypeORM data source
-│   │   │       ├── seed.service.ts     # Database seeding service
-│   │   │       └── seed.ts             # Seeding script
-│   │   └── test/
-│   └── gateway/                        # API Gateway
-│       ├── src/
-│       │   ├── main.ts                 # HTTP server bootstrap
-│       │   ├── gateway.module.ts       # Microservice client config
-│       │   ├── gateway.controller.ts   # REST endpoints
-│       │   ├── gateway.service.ts      # Gateway business logic
-│       │   ├── guards/
-│       │   │   └── jwt-auth.guard.ts   # JWT authentication guard
-│       │   └── decorators/
-│       │       └── current-user.decorator.ts
-│       └── test/
-├── libs/
-│   └── shared/                         # Shared Library
-│       └── src/
-│           ├── dto/
-│           │   └── auth.dto.ts         # Authentication DTOs
-│           ├── interfaces/
-│           │   └── auth.interface.ts   # Common interfaces
-│           ├── guards/
-│           │   └── roles.guard.ts      # Role-based authorization
-│           ├── decorators/
-│           │   └── roles.decorator.ts  # Role decorator
-│           └── index.ts
-├── docker-compose.yml                  # Database services
-├── .env                               # Environment configuration
-├── package.json                       # Scripts and dependencies
-├── nest-cli.json                      # Monorepo configuration
-└── tsconfig.json                      # TypeScript configuration
-```
-
-## Key Features
-
-- **Microservice Communication**: TCP transport between services
-- **JWT Authentication**: Secure token-based authentication with role support
-- **TypeORM + PostgreSQL**: Robust database layer with migrations
-- **Role-Based Access Control**: Admin/User roles with guards and decorators
-- **Database Seeding**: Automated initial data setup
-- **Input Validation**: Class-validator for DTO validation
-- **Type Safety**: Full TypeScript support with shared interfaces
-- **CORS Support**: Enabled for frontend integration
-- **Docker Support**: Complete containerized database setup
-- **Production Ready**: Proper error handling and security practices
-
-## Role-Based Authorization
-
-The system includes role-based access control:
-
-```typescript
-// Protect routes with roles
-@Get('admin-only')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
-async adminOnlyEndpoint() {
-  return { message: 'Admin access granted' };
-}
-```
-
-Available roles:
-
-- `UserRole.ADMIN`: Full system access
-- `UserRole.USER`: Standard user access
-
-## Microservice Communication
-
-The Gateway communicates with the Auth Service using NestJS microservices:
-
-```typescript
-// Gateway calls Auth Service
-const result = await firstValueFrom(
-  this.authClient.send(AUTH_COMMANDS.LOGIN, loginDto),
-);
-```
-
-## Next Steps
-
-- [ ] Add refresh token mechanism
-- [ ] Implement password reset functionality
-- [ ] Add email verification
-- [ ] Set up logging and monitoring
-- [ ] Add Redis for session management
-- [ ] Implement rate limiting
-- [ ] Add API documentation with Swagger
-- [ ] Set up CI/CD pipeline
-- [ ] Add integration tests
-- [ ] Implement user management endpoints
-
-## Troubleshooting
-
-### Database Connection Issues
-
-```bash
-# Check if PostgreSQL is running
-docker ps | grep postgres
-
-# Check database logs
-docker logs devchat-postgres-1
-```
-
-### Service Communication Issues
-
-```bash
-# Check if auth service is listening on TCP port
-netstat -an | findstr ":3001"
-
-# Restart services in order
-pnpm run start:auth
-pnpm run start:gateway
-```
+- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
+- Website - [https://nestjs.com](https://nestjs.com/)
+- Twitter - [@nestframework](https://twitter.com/nestframework)
 
 ## License
 
-This project is licensed under the UNLICENSED License.
+Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).

@@ -1,29 +1,34 @@
 {
+  "compileOnSave": false,
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "resolvePackageJsonExports": true,
-    "esModuleInterop": true,
-    "isolatedModules": true,
-    "declaration": true,
-    "removeComments": true,
+    "target": "es2019",
+    "module": "Node16",
+    "moduleResolution": "node16",
+
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "allowSyntheticDefaultImports": true,
-    "target": "ES2023",
+
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictPropertyInitialization": false,
+
+    "removeComments": true,
+    "declaration": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
     "incremental": true,
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
-    "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false,
+    "baseUrl": "./",
+
     "paths": {
-      "@shared/*": ["libs/shared/src/*"],
-      "@shared": ["libs/shared/src"]
+      "@myorg/entities": ["libs/entities/src"],
+      "@myorg/database": ["libs/database/src"],
+      "@myorg/common": ["libs/common/src"]
     }
-  }
+  },
+  "exclude": ["node_modules", "dist"]
 }

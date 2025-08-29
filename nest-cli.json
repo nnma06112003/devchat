@@ -1,50 +1,56 @@
 {
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "apps/devchat/src",
-  "compilerOptions": {
-    "deleteOutDir": true,
-    "webpack": true,
-    "webpackConfigPath": "webpack.config.js",
-    "tsConfigPath": "apps/devchat/tsconfig.app.json"
-  },
   "monorepo": true,
-  "root": "apps/devchat",
+  "root": "apps",
   "projects": {
-    "shared": {
-      "type": "library",
-      "root": "libs/shared",
-      "entryFile": "index",
-      "sourceRoot": "libs/shared/src",
-      "compilerOptions": {
-        "tsConfigPath": "libs/shared/tsconfig.lib.json"
-      }
-    },
     "auth": {
       "type": "application",
       "root": "apps/auth",
-      "entryFile": "main",
       "sourceRoot": "apps/auth/src",
+      "entryFile": "main",
       "compilerOptions": {
         "tsConfigPath": "apps/auth/tsconfig.app.json"
       }
     },
-    "devchat": {
+    "chat": {
       "type": "application",
-      "root": "apps/devchat",
+      "root": "apps/chat",
+      "sourceRoot": "apps/chat/src",
       "entryFile": "main",
-      "sourceRoot": "apps/devchat/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/devchat/tsconfig.app.json"
+        "tsConfigPath": "apps/chat/tsconfig.app.json"
       }
     },
     "gateway": {
       "type": "application",
       "root": "apps/gateway",
-      "entryFile": "main",
       "sourceRoot": "apps/gateway/src",
+      "entryFile": "main",
       "compilerOptions": {
         "tsConfigPath": "apps/gateway/tsconfig.app.json"
+      }
+    },
+    "entities": {
+      "type": "library",
+      "root": "libs/entities",
+      "sourceRoot": "libs/entities/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/entities/tsconfig.lib.json"
+      }
+    },
+    "database": {
+      "type": "library",
+      "root": "libs/database",
+      "sourceRoot": "libs/database/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/database/tsconfig.lib.json"
+      }
+    },
+    "common": {
+      "type": "library",
+      "root": "libs/common",
+      "sourceRoot": "libs/common/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/common/tsconfig.lib.json"
       }
     }
   }
