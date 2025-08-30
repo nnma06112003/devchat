@@ -15,6 +15,8 @@ import {
   LoginDto,
 } from 'apps/auth/src/dto/auth.dto';
 import { JwtPayload } from 'apps/auth/src/interfaces/auth.interface';
+import { RpcCustomException } from '@myorg/common';
+import { RpcException } from '@nestjs/microservices';
 
 @Injectable()
 export class AuthService {
@@ -98,7 +100,7 @@ export class AuthService {
       registerDto.email,
     );
     if (existingUser) {
-      throw new ConflictException('User already exists with this email');
+      throw new RpcException({ msg: 'Email đã tồn tại', status: 409 });
     }
 
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
@@ -130,7 +132,7 @@ export class AuthService {
   async login(loginDto: LoginDto): Promise<any> {
     const user:any = await this.userRepository.findByEmail(loginDto.email);
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new RpcException({ msg: 'Tài khoản hoặc mật khẩu không đúng', status: 401 });
     }
 
     const isPasswordValid = await bcrypt.compare(
@@ -138,7 +140,7 @@ export class AuthService {
       user.password,
     );
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new RpcException({ msg: 'Tài khoản hoặc mật khẩu không đúng', status: 401 });
     }
 
     const payload: JwtPayload = {
@@ -151,18 +153,7 @@ export class AuthService {
 
     return {
       access_token,
-      refresh_token,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        username: user.username,
-        avatar: user.avatar,
-        provider: user.provider,
-        provider_id: user.provider_id,
-        role: user.role,
-      },
+      refresh_token
     };
   }
 
@@ -172,7 +163,7 @@ export class AuthService {
       const user:any = await this.userRepository.findById(payload.sub);
 
       if (!user) {
-        throw new UnauthorizedException('User not found');
+        throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
       }
       const userData = 
       {
@@ -185,17 +176,16 @@ export class AuthService {
       return userData;
     } catch (error: any) {
       if (error.name === 'TokenExpiredError') {
-        // Trả về lỗi 409 nếu token hết hạn
-        throw new ConflictException('Token expired');
+        throw new RpcException({ msg: 'Token đã hết hạn', status: 409 });
       }
-      throw new UnauthorizedException('Invalid token');
+      throw new RpcException({ msg: 'Token không hợp lệ', status: 401 });
     }
   }
 
   async getProfile(userId: string): Promise<any> {
     const user:any = await this.userRepository.findById(userId);
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
     }
 
     return {
@@ -216,33 +206,28 @@ private async generateAndSaverefresh_token(user: any): Promise<string> {
   }
 
   // Refresh token
-  async refreshToken(dto: { refresh_token: string }): Promise<any> {
-    // Tìm user theo refresh_token
-    const user:any = await this.userRepository.findByrefresh_token(dto.refresh_token);
-    if (!user) throw new UnauthorizedException('Invalid refresh token');
-    // Tạo access_token mới
-    const payload: any = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-    };
-    const access_token = this.jwtService.sign(payload);
-    return {
-      access_token,
-      refresh_token: user.refresh_token,
-      user: {
-        id: user.id,
+  async refreshToken(refresh_token: string): Promise<any> {
+    const user: any = await this.userRepository.findByrefresh_token(refresh_token);
+
+      if (!user) {
+        throw new RpcException({ msg: 'Refresh token không hợp lệ', status: 401 });
+      }
+
+      // 2. Tạo access_token mới
+      const payload: any = {
+        sub: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        username: user.username,
-        avatar: user.avatar,
-        provider: user.provider,
-        provider_id: user.provider_id,
         role: user.role,
-      },
-    };
+      };
+
+      const access_token = this.jwtService.sign(payload);
+      const new_refresh_token = await this.generateAndSaverefresh_token(user);
+
+      // 4. Trả về token mới
+      return {
+        access_token: access_token ?? null,
+        refresh_token: new_refresh_token ?? null,
+      };
+
   }
-
-
 }

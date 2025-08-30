@@ -21,7 +21,7 @@ async findByProvider(provider: string, provider_id: string): Promise<User | null
     return this.repository.findOne({ where: { id } });
   }
 
-    async findByrefresh_token(refresh_token: string): Promise<User | null> {
+  async findByrefresh_token(refresh_token: string): Promise<User | null> {
     return this.repository.findOne({ where: { refresh_token } });
   }
 
