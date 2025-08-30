@@ -5,13 +5,14 @@ import {
   Column,
   CreateDateColumn,
   ManyToOne,
+  PrimaryColumn,
 } from 'typeorm';
 import { Channel } from './channel.entity';
 import { User } from './user.entity';
 
 @Entity('messages')
 export class Message {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn()
   id: string;
 
   @Column()

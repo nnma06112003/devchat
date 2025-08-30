@@ -10,7 +10,7 @@ import { Message } from './message.entity';
 
 @Entity('channels')
 export class Channel {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn()
   id: string;
 
   @Column()

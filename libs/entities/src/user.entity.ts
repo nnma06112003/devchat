@@ -5,13 +5,16 @@ import {
   Column,
   CreateDateColumn,
   OneToMany,
+  UpdateDateColumn,
 } from 'typeorm';
-import { Message } from './message.entity';
 
 @Entity('users')
 export class User {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn()
   id: string;
+
+  @Column({ nullable: true })
+  username?: string;
 
   @Column({ unique: true })
   email: string;
@@ -23,14 +26,17 @@ export class User {
   provider?: string;
 
   @Column({ nullable: true })
-  providerId?: string;
+  provider_id?: string;
 
   @Column({ default: 'user' })
   role: string;
 
   @Column({ nullable: true })
-  refreshToken?: string;
+  refresh_token?: string;
 
   @CreateDateColumn()
-  createdAt: Date;
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
 }

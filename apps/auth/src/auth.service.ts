@@ -218,7 +218,7 @@ private async generateAndSaveRefreshToken(user: any): Promise<string> {
   // Refresh token
   async refreshToken(dto: { refreshToken: string }): Promise<any> {
     // Tìm user theo refreshToken
-    const user:any = await this.userRepository.findByRefreshToken(dto.refreshToken);
+    const user:any = await this.userRepository.findByrefresh_token(dto.refreshToken);
     if (!user) throw new UnauthorizedException('Invalid refresh token');
     // Tạo access_token mới
     const payload: any = {

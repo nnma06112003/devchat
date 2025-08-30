@@ -14,15 +14,15 @@ export class UserRepository {
   async findByEmail(email: string): Promise<User | null> {
     return this.repository.findOne({ where: { email } });
   }
-async findByProvider(provider: string, providerId: string): Promise<User | null> {
-    return this.repository.findOne({ where: { provider, providerId } });
+async findByProvider(provider: string, provider_id: string): Promise<User | null> {
+    return this.repository.findOne({ where: { provider, provider_id } });
   }
   async findById(id: string): Promise<User | null> {
     return this.repository.findOne({ where: { id } });
   }
 
-    async findByRefreshToken(refreshToken: string): Promise<User | null> {
-    return this.repository.findOne({ where: { refreshToken } });
+    async findByrefresh_token(refresh_token: string): Promise<User | null> {
+    return this.repository.findOne({ where: { refresh_token } });
   }
 
   async create(userData: RegisterDto & { password: string }): Promise<User> {
