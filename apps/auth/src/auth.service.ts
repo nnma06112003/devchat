@@ -1,4 +1,4 @@
-  // Tạo refreshToken và lưu vào user
+  // Tạo refresh_token và lưu vào user
   
 
 import {
@@ -66,7 +66,7 @@ export class AuthService {
         username: githubProfile.username,
         avatar: githubProfile.avatar,
         provider: 'github',
-        providerId: githubProfile.id,
+        provider_id: githubProfile.id,
       } as any);
     }
 
@@ -88,7 +88,7 @@ export class AuthService {
         username: user.username,
         avatar: user.avatar,
         provider: user.provider,
-        providerId: user.providerId,
+        provider_id: user.provider_id,
         role: user.role,
       },
     };
@@ -147,7 +147,7 @@ export class AuthService {
       role: user.role,
     };
     const access_token = this.jwtService.sign(payload);
-    const refresh_token = await this.generateAndSaveRefreshToken(user);
+    const refresh_token = await this.generateAndSaverefresh_token(user);
 
     return {
       access_token,
@@ -160,7 +160,7 @@ export class AuthService {
         username: user.username,
         avatar: user.avatar,
         provider: user.provider,
-        providerId: user.providerId,
+        provider_id: user.provider_id,
         role: user.role,
       },
     };
@@ -204,21 +204,21 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
     };
   }
-private async generateAndSaveRefreshToken(user: any): Promise<string> {
-    const refreshToken = this.jwtService.sign({ sub: user.id }, { expiresIn: '7d' });
-    user.refreshToken = refreshToken;
+private async generateAndSaverefresh_token(user: any): Promise<string> {
+    const refresh_token = this.jwtService.sign({ sub: user.id }, { expiresIn: '7d' });
+    user.refresh_token = refresh_token;
     await this.userRepository.save(user);
-    return refreshToken;
+    return refresh_token;
   }
 
   // Refresh token
-  async refreshToken(dto: { refreshToken: string }): Promise<any> {
-    // Tìm user theo refreshToken
-    const user:any = await this.userRepository.findByrefresh_token(dto.refreshToken);
+  async refreshToken(dto: { refresh_token: string }): Promise<any> {
+    // Tìm user theo refresh_token
+    const user:any = await this.userRepository.findByrefresh_token(dto.refresh_token);
     if (!user) throw new UnauthorizedException('Invalid refresh token');
     // Tạo access_token mới
     const payload: any = {
@@ -229,7 +229,7 @@ private async generateAndSaveRefreshToken(user: any): Promise<string> {
     const access_token = this.jwtService.sign(payload);
     return {
       access_token,
-      refresh_token: user.refreshToken,
+      refresh_token: user.refresh_token,
       user: {
         id: user.id,
         email: user.email,
@@ -238,7 +238,7 @@ private async generateAndSaveRefreshToken(user: any): Promise<string> {
         username: user.username,
         avatar: user.avatar,
         provider: user.provider,
-        providerId: user.providerId,
+        provider_id: user.provider_id,
         role: user.role,
       },
     };

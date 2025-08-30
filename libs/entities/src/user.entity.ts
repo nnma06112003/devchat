@@ -4,14 +4,15 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  OneToMany,
+  ManyToMany,
   UpdateDateColumn,
 } from 'typeorm';
+import { Channel } from './channel.entity';
 
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
-  id: string;
+  id: number | string;
 
   @Column({ nullable: true })
   username?: string;
@@ -39,4 +40,7 @@ export class User {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+  @ManyToMany(() => Channel, (channel) => channel.users)
+  channels: Channel[];
 }

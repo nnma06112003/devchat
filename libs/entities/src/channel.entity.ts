@@ -5,13 +5,17 @@ import {
   Column,
   CreateDateColumn,
   OneToMany,
+  UpdateDateColumn,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 import { Message } from './message.entity';
+import { User } from './user.entity';
 
 @Entity('channels')
 export class Channel {
   @PrimaryGeneratedColumn()
-  id: string;
+  id: number | string;
 
   @Column()
   name: string;
@@ -19,9 +23,23 @@ export class Channel {
   @Column({ default: 'group' })
   type: 'personal' | 'group';
 
-  @CreateDateColumn()
-  createdAt: Date;
+  @Column({ default: 0 })
+  member_count: number;
 
-  @OneToMany(() => Message, (message:any) => message.channel)
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
+
+  @OneToMany(() => Message, (message: any) => message.channel)
   messages: Message[];
+
+  @ManyToMany(() => User, (user) => user.channels, { cascade: true })
+  @JoinTable({
+    name: 'channel_members', // bảng trung gian
+    joinColumn: { name: 'channel_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' },
+  })
+  users: User[];
 }

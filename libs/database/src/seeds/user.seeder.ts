@@ -12,28 +12,29 @@ export class UserSeeder {
     const exist = await repo.findOne({ where: { email: 'admin@example.com' } });
     if (exist) return;
 
-    // Hash mật khẩu
-    const adminPassword = await bcrypt.hash('admin123', 10);
-    const userPassword = await bcrypt.hash('123456', 10);
+    // Hash mật khẩu mặc định
+    const defaultPassword = await bcrypt.hash('123', 10);
 
     // User admin
     const admin = repo.create({
       username: 'admin',
       email: 'admin@example.com',
-      password: adminPassword,
+      password: defaultPassword,
       role: 'admin',
     });
 
-    // User thường
-    const user = repo.create({
-      username: 'saw',
-      email: 'saw@example.com',
-      password: userPassword,
-      role: 'user',
-    });
+    // 5 user thường
+    const users = Array.from({ length: 5 }).map((_, i) =>
+      repo.create({
+        username: `user${i + 1}`,
+        email: `user${i + 1}@example.com`,
+        password: defaultPassword,
+        role: 'user',
+      })
+    );
 
-    await repo.save([admin, user]);
+    await repo.save([admin, ...users]);
 
-    console.log('✅ User seeding done!');
+    console.log('✅ User seeding done! (1 admin + 5 users)');
   }
 }

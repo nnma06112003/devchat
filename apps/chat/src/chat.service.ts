@@ -47,7 +47,7 @@ export class ChatService extends BaseService<Message | Channel> {
   /**
    * Lấy lịch sử tin nhắn của một channel với phân trang và filter.
    * - page/pageSize: phân trang dựa trên offset
-   * - after: id của tin nhắn cuối (cursor) -> trả các tin nhắn sau tin nhắn này (by createdAt)
+   * - after: id của tin nhắn cuối (cursor) -> trả các tin nhắn sau tin nhắn này (by created_at)
    * - since: timestamp ISO/string/Date -> trả các tin nhắn từ lúc này trở đi
    * - order: 'ASC' | 'DESC' (mặc định 'ASC')
    * Trả về { items, total, page, pageSize, hasMore }
@@ -78,10 +78,10 @@ export class ChatService extends BaseService<Message | Channel> {
   if (options?.after) {
     const afterMsg = await this.messageRepo.findOne({
       where: { id: options.after },
-      select: ['createdAt'],
+      select: ['created_at'],
     });
     if (afterMsg) {
-      where.createdAt = { ...(where.createdAt ?? {}), $gt: afterMsg.createdAt };
+      where.created_at = { ...(where.created_at ?? {}), $gt: afterMsg.created_at };
     }
   }
 
@@ -89,7 +89,7 @@ export class ChatService extends BaseService<Message | Channel> {
   if (options?.since) {
     const sinceDate = new Date(options.since);
     if (!isNaN(sinceDate.getTime())) {
-      where.createdAt = { ...(where.createdAt ?? {}), $gte: sinceDate };
+      where.created_at = { ...(where.created_at ?? {}), $gte: sinceDate };
     }
   }
 
@@ -98,7 +98,7 @@ export class ChatService extends BaseService<Message | Channel> {
   const [items, total] = await this.messageRepo.findAndCount({
     where,
     relations: { channel: true },
-    order: { createdAt: order },
+    order: { created_at: order },
     skip: (page - 1) * pageSize,
     take: pageSize,
   });

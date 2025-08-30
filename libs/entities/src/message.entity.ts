@@ -6,6 +6,7 @@ import {
   CreateDateColumn,
   ManyToOne,
   PrimaryColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Channel } from './channel.entity';
 import { User } from './user.entity';
@@ -13,25 +14,22 @@ import { User } from './user.entity';
 @Entity('messages')
 export class Message {
   @PrimaryGeneratedColumn()
-  id: string;
-
-  @Column()
-  senderId: string; // tham chiếu User
+  id: number | string;
 
   @Column('text')
   text: string;
 
-  @Column({ nullable: true })
-  snippetId?: string;
-
-  @ManyToOne(() => Channel, channel => channel.messages, {
+  @ManyToOne(() => Channel, (channel) => channel.messages, {
     onDelete: 'CASCADE',
   })
   channel: Channel;
 
-  @ManyToOne(() => User, { nullable: false, onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { nullable: false, onDelete: 'SET NULL' })
   sender: User;
 
   @CreateDateColumn()
-  createdAt: Date;
+  created_at: Date;
+
+  @UpdateDateColumn()
+    updated_at: Date;
 }

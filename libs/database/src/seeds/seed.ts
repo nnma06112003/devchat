@@ -1,4 +1,5 @@
 import { dataSource } from '../database.module';
+import { ChannelSeeder } from './channel.seed';
 import { UserSeeder } from './user.seeder';
 
 async function bootstrap() {
@@ -6,8 +7,11 @@ async function bootstrap() {
     await dataSource.initialize();
     console.log('📦 Database connected');
 
-    const seeder = new UserSeeder(dataSource);
-    await seeder.run();
+    const seederUser = new UserSeeder(dataSource);
+    await seederUser.run();
+
+    const seederChannel = new ChannelSeeder(dataSource);
+    await seederChannel.run();
 
     await dataSource.destroy();
     process.exit(0);
