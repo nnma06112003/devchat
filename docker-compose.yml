@@ -5,7 +5,7 @@ services:
     image: postgres:15-alpine
     restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_DB: dev_chat          
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_INITDB_ARGS: '--encoding=UTF-8 --lc-collate=C --lc-ctype=C'
@@ -15,9 +15,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres:/docker-entrypoint-initdb.d
     networks:
-      - dev-chat-network
+      - chatnet                    
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d dev_chat']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,7 +37,7 @@ services:
       - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
       - ./docker/pgadmin/pgpass:/pgadmin4/pgpass:ro
     networks:
-      - dev-chat-network
+      - chatnet                     # 👈 đổi network
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,7 +55,7 @@ services:
       - mongodb_data:/data/db
       - ./docker/mongodb:/docker-entrypoint-initdb.d
     networks:
-      - dev-chat-network
+      - chatnet
     healthcheck:
       test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
       interval: 10s
@@ -74,7 +74,7 @@ services:
     ports:
       - '${MONGO_EXPRESS_PORT}:8081'
     networks:
-      - dev-chat-network
+      - chatnet
     depends_on:
       mongodb:
         condition: service_healthy
@@ -88,7 +88,7 @@ services:
     ports:
       - '2181:2181'
     networks:
-      - dev-chat-network
+      - chatnet
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -101,14 +101,14 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Kafka lắng nghe 2 listener, mỗi cái 1 cổng khác nhau
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     networks:
-      - dev-chat-network
+      - chatnet
+
   kafdrop:
     image: obsidiandynamics/kafdrop:latest
     restart: always
@@ -118,12 +118,13 @@ services:
       KAFKA_BROKERCONNECT: kafka:9092
       JVM_OPTS: '-Xms32M -Xmx64M'
     networks:
-      - dev-chat-network
+      - chatnet
+
 volumes:
   postgres_data:
   pgadmin_data:
   mongodb_data:
 
 networks:
-  dev-chat-network:
+  chatnet:        
     driver: bridge
