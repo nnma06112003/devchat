@@ -167,11 +167,11 @@ export class AuthService {
       }
       const userData = 
       {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
+        id: user?.id,
+        email: user?.email,
+        firstName: user?.firstName,
+        lastName: user?.lastName,
+        role: user?.role,
       };
       return userData;
     } catch (error: any) {

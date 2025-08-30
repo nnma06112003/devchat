@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards ,Req  } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { Request } from 'express';
 
 // Tất cả HTTP từ FE đi qua controller này → định tuyến tới Kafka
 @Controller('api')
@@ -61,9 +62,33 @@ async githubOAuth(@Query('code') code: string) {
   // Param: channelId: string
   // Query: { cursor?: string }
   @UseGuards(JwtAuthGuard)
-  @Get('channels/:channelId/messages')
-  async listMessages(@Param('channelId') channelId: string, @Query() q: any) {
-    return this.gw.exec('chat', 'listMessages', { channelId, ...q });
+  @Get('channels/list-channels')
+  async listChannels(
+    @Query() q: any,
+    @Req() req: Request,   // 👈 lấy request
+  ) {
+    const user = req.user as any; // JwtAuthGuard đã inject user vào đây
+    return this.gw.exec('chat', 'listChannels', {
+      user,   // 👈 truyền userId sang service chat
+      ...q,
+    });
+  }
+
+
+
+    @UseGuards(JwtAuthGuard)
+  @Get('channels/list-messages/:channel_id')
+  async listMessages(
+    @Param('channel_id') channel_id: string, 
+    @Query() q: any,
+    @Req() req: Request,   // 👈 lấy request
+  ) {
+    const user = req.user as any; // JwtAuthGuard đã inject user vào đây
+    return this.gw.exec('chat', 'listChannelsMessages', {
+      user,   // 👈 truyền userId sang service chat
+      channel_id,
+      ...q,
+    });
   }
 
   // FE: POST /api/channels

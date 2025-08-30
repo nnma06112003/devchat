@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { NotFoundException } from '@nestjs/common';
+import { RpcCustomException } from './interceptors/rpc-custom.exception';
 
 export abstract class BaseService<T extends { id: any }> {
   protected constructor(protected readonly repository: Repository<T>) {}
@@ -106,12 +107,11 @@ export abstract class BaseService<T extends { id: any }> {
   async check_exist_with_datas<U>(
     entity: EntityTarget<U>,
     where: FindOptionsWhere<U>,
-    length: number,
     errorMessage?: string,
   ): Promise<U[]> {
     const existing = await this.repository.manager.find((entity: EntityTarget<U>) => entity, { where });
-    if ((!existing || existing.length !== length) && errorMessage) {
-      throw new Error(errorMessage);
+    if ((!existing) && errorMessage) {
+      throw new RpcCustomException(errorMessage, 400);
     }
     return existing as U[];
   }

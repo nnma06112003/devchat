@@ -13,10 +13,10 @@ export class ChatController {
     switch (payload.cmd) {
       case 'sendMessage':
         return await this.chatService.sendMessage(payload.data);
-      case 'listMessages':
-        return await this.chatService.fetchHistory(payload.data.channelId);
+      case 'listChannelsMessages':
+        return await this.chatService.fetchHistory(payload.data.user,payload.data.channel_id);
       case 'listChannels':
-        return await this.chatService.listChannels(payload.data.userId);
+        return await this.chatService.listChannels(payload.data.user);
       default:
         return { error: 'Unknown command' };
     }
