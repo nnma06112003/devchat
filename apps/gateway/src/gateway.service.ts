@@ -20,47 +20,54 @@ export class GatewayService implements OnModuleInit {
     await this.kafka.connect();
   }
 
-async exec(service: string, cmd: string, data: any, opts?: { waitMs?: number }) {
-  const topic = `svc.${service}.exec`;
-  const wait = opts?.waitMs ?? 5000;
+  async exec(
+    service: string,
+    cmd: string,
+    data: any,
+    opts?: { waitMs?: number },
+  ) {
+    const topic = `svc.${service}.exec`;
+    const wait = opts?.waitMs ?? 50000;
 
-  try {
-    const res$ = this.kafka
-      .send<any, any>(topic, { cmd, data })
-      .pipe(timeout(wait));
-    return await lastValueFrom(res$);
-  } catch (err: any) {
-    // Kafka + RpcException => dữ liệu thực tế nằm trong err.response
-    const payload = err?.response ?? err?.message ?? err;
+    try {
+      const res$ = this.kafka
+        .send<any, any>(topic, { cmd, data })
+        .pipe(timeout(wait));
+      return await lastValueFrom(res$);
+    } catch (err: any) {
+      // Kafka + RpcException => dữ liệu thực tế nằm trong err.response
+      const payload = err?.response ?? err?.message ?? err;
 
-    if (payload?.status) {
-      // Đây chính là object RpcException từ service trả về
+      if (payload?.status) {
+        // Đây chính là object RpcException từ service trả về
+        throw new HttpException(
+          {
+            code: payload.status,
+            msg: payload.msg,
+            data: null,
+          },
+          payload.status,
+        );
+      }
+
+      // Timeout
+      if (err?.name === 'TimeoutError') {
+        throw new HttpException(
+          {
+            code: 'REQUEST_TIMEOUT',
+            msg: `Service ${service} không phản hồi trong ${wait}ms`,
+          },
+          504,
+        );
+      }
+
+      // Fallback
       throw new HttpException(
-        {
-          code: payload.status,
-          msg: payload.msg,
-          data: null,
-        },
-        payload.status,
+        { code: 'UNEXPECTED_ERROR', msg: JSON.stringify(payload) },
+        500,
       );
     }
-
-    // Timeout
-    if (err?.name === 'TimeoutError') {
-      throw new HttpException(
-        { code: 'REQUEST_TIMEOUT', msg: `Service ${service} không phản hồi trong ${wait}ms` },
-        504,
-      );
-    }
-
-    // Fallback
-    throw new HttpException(
-      { code: 'UNEXPECTED_ERROR', msg: JSON.stringify(payload) },
-      500,
-    );
   }
-}
-
 
   emit(service: string, cmd: string, data: any) {
     const topic = `svc.${service}.exec`;

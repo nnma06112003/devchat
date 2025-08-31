@@ -2,8 +2,6 @@ import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { AuthService } from './auth.service';
 
-
-
 @Controller()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -23,10 +21,9 @@ export class AuthController {
       case 'get_profile':
         return this.authService.getProfile(data.userId);
       case 'github_oauth':
-        return this.authService.loginGithubOAuth(data);
+        return this.authService.loginGithubOAuth(data.code);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }
   }
-
 }
