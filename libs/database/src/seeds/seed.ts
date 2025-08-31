@@ -1,5 +1,6 @@
 import { dataSource } from '../database.module';
 import { ChannelSeeder } from './channel.seed';
+import { MessageSeeder } from './message.seed';
 import { UserSeeder } from './user.seeder';
 
 async function bootstrap() {
@@ -12,6 +13,11 @@ async function bootstrap() {
 
     const seederChannel = new ChannelSeeder(dataSource);
     await seederChannel.run();
+
+    
+
+    const seederMessage = new MessageSeeder(dataSource);
+    await seederMessage.run();
 
     await dataSource.destroy();
     process.exit(0);
