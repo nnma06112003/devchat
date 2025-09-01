@@ -26,7 +26,7 @@ export class ChatService extends BaseService<Message | Channel> {
   }
 
 
-  async joinChannel(user: any, data: { id: string, type: 'group' | 'personal' }) {
+  async joinChannel(user: any, data: { id: string, type: string }) {
     if (!user || !user.id) {
       throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
     }
@@ -45,7 +45,10 @@ export class ChatService extends BaseService<Message | Channel> {
       // Kiểm tra user đã là thành viên chưa
       const isMember = channel.users.some(u => String(u.id) === String(user.id));
       if (isMember) {
-        throw new RpcException({ msg: 'Bạn đã là thành viên của kênh này', status: 401 });
+         return {
+          msg: 'Bạn đang là thành viên của kênh này',
+          channelId: data.id,
+        };
       }
       // Thêm user vào kênh
       channel.users.push(user);
@@ -71,7 +74,10 @@ export class ChatService extends BaseService<Message | Channel> {
       // Lọc kênh có đúng 2 thành viên là 2 user này
       const found = existChannel.find(c => c.users.length === 2 && c.users.some(u => String(u.id) === String(user.id)) && c.users.some(u => String(u.id) === String(otherUser.id)));
       if (found) {
-        throw new RpcException({ msg: 'Bạn đã nhắn tin với người này', status: 401 });
+         return {
+          msg: 'Bạn đã nhắn tin với người này',
+          channelId: found.id,
+      };
       }
       // Tạo kênh mới
       const channel = this.channelRepo.create({
@@ -187,10 +193,20 @@ export class ChatService extends BaseService<Message | Channel> {
       .where('user.id = :userId', { userId: user?.id })
       .getMany();
     // Trả về danh sách channel, mỗi channel có mảng members đã loại bỏ trường nhạy cảm
-    return channels.map(channel => ({
-      ...channel,
-      members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
-    }));
+    return channels.map(channel => {
+      let channelName = channel.name;
+      if (channel.type === 'personal') {
+        const otherUser = (channel.users || []).find(u => String(u.id) !== String(user.id));
+        if (otherUser && otherUser.username) {
+          channelName = otherUser.username;
+        }
+      }
+      return {
+        ...channel,
+        name: channelName,
+        members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
+      };
+    });
   }
 
   /**
