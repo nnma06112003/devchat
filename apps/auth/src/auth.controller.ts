@@ -22,6 +22,8 @@ export class AuthController {
         return this.authService.getProfile(data.userId);
       case 'github_oauth':
         return this.authService.loginGithubOAuth(data.code);
+      case 'searchUsers':
+        return this.authService.searchUsers(data?.data);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }

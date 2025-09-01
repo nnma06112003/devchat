@@ -19,6 +19,8 @@ export class ChatController {
         return await this.chatService.fetchHistory(payload.data.user, payload.data.channel_id);
       case 'listChannels':
         return await this.chatService.listChannels(payload.data.user);
+      case 'searchChatEntities':
+        return await this.chatService.searchChatEntities(payload.data.user, payload.data);
       default:
         return { error: 'Unknown command' };
     }

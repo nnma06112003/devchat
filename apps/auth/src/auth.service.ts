@@ -13,13 +13,38 @@ import { RegisterDto, LoginDto } from 'apps/auth/src/dto/auth.dto';
 import { JwtPayload } from 'apps/auth/src/interfaces/auth.interface';
 import { RpcCustomException } from '@myorg/common';
 import { RpcException } from '@nestjs/microservices';
+import { User } from '@myorg/entities';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Like, Repository } from 'typeorm';
 
 @Injectable()
 export class AuthService {
+  // Tìm kiếm user theo username hoặc email
+  
   constructor(
+     @InjectRepository(User)
+        private readonly userRepo: Repository<User>,
     private userRepository: UserRepository,
     private jwtService: JwtService,
-  ) {}
+  ) { }
+  async searchUsers(params: { key: string; limit?: number }): Promise<any[]> {
+    const key = (params.key || '').trim();
+    const limit = params.limit ?? 10;
+    if (!key) return [];
+    const users = await this.userRepo.find({
+      where: [
+        { username: Like(`%${key}%`) },
+        { email: Like(`%${key}%`) },
+      ],
+      take: limit,
+    });
+    // Trả về thông tin cơ bản, loại bỏ trường nhạy cảm
+    return users.map((u: User) => ({
+      id: u.id,
+      email: u.email,
+      username: u.username,
+    }));
+  }
   // Đăng nhập bằng Github OAuth
   async loginGithubOAuth(code: string): Promise<any> {
     // 1. Đổi code lấy access_token từ GitHub

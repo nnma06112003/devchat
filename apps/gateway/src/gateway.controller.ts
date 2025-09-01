@@ -103,5 +103,33 @@ async githubOAuth(@Query('code') code: string) {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('channels/search-chat')
+  async SearchChat(
+    @Query() q: any,
+    @Req() req: Request,   // 👈 lấy request
+  ) {  
+    const user = req.user as any; // JwtAuthGuard đã inject user vào đây
+    return this.gw.exec('chat', 'searchChatEntities', {
+      user,
+      data: { key: q?.key, type: q?.type ?? '' ,limit: q?.limit ?? 5 },
+      ...q,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('users/search-user')
+  async SearchUsers(
+    @Query() q: any,
+    @Req() req: Request,   // 👈 lấy request
+  ) {  
+    const user = req.user as any; // JwtAuthGuard đã inject user vào đây
+    return this.gw.exec('auth', 'searchUsers', {
+      user,
+      data: { key: q?.key, limit: q?.limit ?? 5 },
+      ...q,
+    });
+  }
+
   
 }
