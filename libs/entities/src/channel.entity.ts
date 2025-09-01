@@ -21,7 +21,7 @@ export class Channel {
   name: string;
 
   @Column({ default: 'group' })
-  type: 'personal' | 'group';
+  type: 'personal' | 'group' | 'group-private';
 
   @Column({ default: 0 })
   member_count: number;

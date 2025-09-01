@@ -12,9 +12,11 @@ export class ChatController {
   async handleChatMessage(@Payload() payload: any) {
     switch (payload.cmd) {
       case 'sendMessage':
-        return await this.chatService.sendMessage(payload.data);
+        return await this.chatService.sendMessage(payload.data.user, payload.data);
+      case 'createChannel':
+        return await this.chatService.createChannel(payload.data.user, payload.data);
       case 'listChannelsMessages':
-        return await this.chatService.fetchHistory(payload.data.user,payload.data.channel_id);
+        return await this.chatService.fetchHistory(payload.data.user, payload.data.channel_id);
       case 'listChannels':
         return await this.chatService.listChannels(payload.data.user);
       default:

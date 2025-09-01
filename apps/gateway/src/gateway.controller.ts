@@ -45,16 +45,28 @@ async githubOAuth(@Query('code') code: string) {
   }
 
 
-
+ // ---------- CHAT ----------
+  // FE: POST /api/channels/:channelId/messages
+  // Body: { text: string, snippetId?: string }
+  // Param: channelId: string
+  @UseGuards(JwtAuthGuard)
+  @Post('channels/create-channel')
+  async createChannel(@Body() dto: any, @Req() req: Request) {
+    // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'createChannel', payload);
+  }
   // ---------- CHAT ----------
   // FE: POST /api/channels/:channelId/messages
   // Body: { text: string, snippetId?: string }
   // Param: channelId: string
   @UseGuards(JwtAuthGuard)
-  @Post('channels/:channelId/messages')
-  async sendMessage(@Param('channelId') channelId: string, @Body() dto: any) {
+  @Post('channels/send-messages')
+  async sendMessage(@Body() dto: any, @Req() req: Request) {
     // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
-    const payload = { channelId, ...dto };
+    const user = req.user as any;
+    const payload = { user, ...dto };
     return this.gw.exec('chat', 'sendMessage', payload);
   }
 
@@ -76,7 +88,7 @@ async githubOAuth(@Query('code') code: string) {
 
 
 
-    @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('channels/list-messages/:channel_id')
   async listMessages(
     @Param('channel_id') channel_id: string, 
@@ -91,13 +103,5 @@ async githubOAuth(@Query('code') code: string) {
     });
   }
 
-  // FE: POST /api/channels
-  // Body: { name: string, visibility: string, members: string[] }
-  @UseGuards(JwtAuthGuard)
-  @Post('channels')
-  async createChannel(@Body() dto: any) {
-    return this.gw.exec('chat', 'createChannel', dto);
-  }
-
-  // (mở rộng) SEARCH, FILE, NOTIFICATION... tương tự
+  
 }

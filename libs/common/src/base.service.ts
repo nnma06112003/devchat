@@ -76,48 +76,60 @@ export abstract class BaseService<T extends { id: any }> {
     }
   }
 
-  async check_exist_no_data<U>(
+  async check_exist_no_data<U extends import('typeorm').ObjectLiteral>(
     entity: EntityTarget<U>,
     where: FindOptionsWhere<U>,
     errorMessage: string,
   ): Promise<void> {
-    const existing = await this.repository.manager.findOne((entity: EntityTarget<U>) => entity, { where });
-    if (existing) throw new Error(errorMessage);
+    const repo = this.repository.manager.getRepository(entity);
+    const existing = await repo.findOne({ where });
+    if (existing) throw new RpcCustomException(errorMessage, 400);
   }
 
-  async check_non_exist_no_data<U>(
+  async check_non_exist_no_data<U extends import('typeorm').ObjectLiteral>(
     entity: EntityTarget<U>,
     where: FindOptionsWhere<U>,
     errorMessage: string,
   ): Promise<void> {
-    const existing = await this.repository.manager.findOne((entity: EntityTarget<U>) => entity, { where });
-    if (!existing) throw new Error(errorMessage);
+    const repo = this.repository.manager.getRepository(entity);
+    const existing = await repo.findOne({ where });
+    if (!existing) throw new RpcCustomException(errorMessage, 400);
   }
 
-  async check_exist_with_data<U>(
+  async check_exist_with_data<U extends import('typeorm').ObjectLiteral>(
     entity: EntityTarget<U>,
     where: FindOptionsWhere<U>,
     errorMessage?: string,
   ): Promise<U> {
-    const existing = await this.repository.manager.findOne((entity: EntityTarget<U>) => entity, { where });
-    if (!existing && errorMessage) throw new Error(errorMessage);
+    const repo = this.repository.manager.getRepository(entity);
+    const existing = await repo.findOne({ where });
+    if (!existing && errorMessage) throw new RpcCustomException(errorMessage, 400);
     return existing as U;
   }
 
-  async check_exist_with_datas<U>(
+  async check_exist_with_datas<U extends import('typeorm').ObjectLiteral>(
     entity: EntityTarget<U>,
     where: FindOptionsWhere<U>,
     errorMessage?: string,
   ): Promise<U[]> {
-    const existing = await this.repository.manager.find((entity: EntityTarget<U>) => entity, { where });
-    if ((!existing) && errorMessage) {
+    const repo = this.repository.manager.getRepository(entity);
+    const existing = await repo.find({ where });
+    if ((!existing || existing.length === 0) && errorMessage) {
       throw new RpcCustomException(errorMessage, 400);
     }
     return existing as U[];
   }
 
-  remove_password_field(item: any) {
-    if (item?.password) delete item.password;
-    return item;
+  remove_field_user(item: any) {
+  if (!item) return item;
+  delete item.password;
+  delete item.provider;
+  delete item.provider_id;
+  delete item.role;
+  delete item.refresh_token;
+  delete item.created_at;
+  delete item.updated_at;
+  delete item.resetToken;
+  return item;
   }
 }
