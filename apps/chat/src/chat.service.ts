@@ -181,7 +181,6 @@ export class ChatService extends BaseService<Message | Channel> {
   // Lấy danh sách channel của userId
   async listChannels(user: any) {
     // Trả về danh sách các channel mà user là thành viên
-    console.log(user);
 
     if (!user || !user.id) {
       throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
@@ -202,9 +201,13 @@ export class ChatService extends BaseService<Message | Channel> {
         }
       }
       return {
-        ...channel,
+        id: channel.id,
         name: channelName,
-        members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
+        type: channel.type,
+        member_count: channel.member_count,
+        created_at: channel.created_at,
+        updated_at: channel.updated_at,
+        // members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
       };
     });
   }
@@ -316,116 +319,109 @@ export class ChatService extends BaseService<Message | Channel> {
       hasMore: page * pageSize < total,
     };
   }
-
-    async searchChatEntities(user: any, data: { key: string , type: string ,limit: number }) {
-    const key = (data?.key || '').trim();
+  async searchChatEntities(
+    user: any,
+    data: { key: string; type: 'user' | 'group' | 'group-private' | 'personal' | 'all'; limit: number },
+  ) {
+    const key = (data?.key || '').trim().toLowerCase();
     const type = data?.type || 'all';
     const limit = data?.limit || 5;
-    // Trả về user
-    if (type === 'user') {
-      if (!key) return { users: [], channels: { personal: [], group: [], private: [] } };
-      const foundUsers = await this.userRepo.createQueryBuilder('user')
-        .where('user.username LIKE :key OR user.email LIKE :key', { key: `%${key}%` })
-        .limit(limit)
-        .getMany();
-      const users = foundUsers.map(u => this.remove_field_user({ ...u }));
-      return { users, channels: { personal: [], group: [], private: [] } };
+
+    if (!key) {
+      return { users: [], channels: { personal: [], group: [], private: [] } };
     }
 
-    // Trả về kênh group
-    if (type === 'group') {
-      const foundChannels = await this.channelRepo.createQueryBuilder('channel')
-        .leftJoin('channel.users', 'member')
-        .where('channel.type = :type', { type: 'group' })
-        .andWhere('channel.name LIKE :key', { key: `%${key}%` })
-        .limit(limit)
+    // ---- Helper queries ----
+    const searchUsers = async () => {
+      const users = await this.userRepo
+        .createQueryBuilder('u')
+        .select(['u.id', 'u.username', 'u.email'])
+        .where('LOWER(u.username) LIKE :key OR LOWER(u.email) LIKE :key', { key: `%${key}%` })
+        .take(limit)
         .getMany();
-      const group = foundChannels.map(channel => {
-        const isMember = channel.users?.some(u => String(u.id) === String(user.id));
-        const { users, ...rest } = channel;
-        return {
-          ...rest,
-          isMember,
-        };
-      });
-      return { users: [], channels: { personal: [], group, private: [] } };
-    }
-
-    // Trả về kênh group-private
-    if (type === 'group-private') {
-      const foundChannels = await this.channelRepo.createQueryBuilder('channel')
-        .leftJoin('channel.users', 'member')
-        .where('channel.type = :type', { type: 'group-private' })
-        .andWhere('channel.name LIKE :key', { key: `%${key}%` })
-        .limit(limit)
-        .getMany();
-      const privateChannels = foundChannels
-        .filter(channel => channel.users?.some(u => String(u.id) === String(user.id)))
-        .map(channel => {
-          const { users, ...rest } = channel;
-          return {
-            ...rest,
-            isMember: true,
-          };
-        });
-      return { users: [], channels: { personal: [], group: [], private: privateChannels } };
-    }
-
-    // Mặc định: all (như logic cũ)
-    if (!key) return { users: [], channels: { personal: [], group: [], private: [] } };
-    // Tìm kiếm user theo tên hoặc email
-    const foundUsers = await this.userRepo.createQueryBuilder('user')
-      .where('user.username LIKE :key OR user.email LIKE :key', { key: `%${key}%` })
-      .limit(limit)
-      .getMany();
-    const users = foundUsers.map(u => this.remove_field_user({ ...u }));
-    // Tìm kiếm các kênh chat có tên khớp
-      const foundChannels = await this.channelRepo.createQueryBuilder('channel')
-        .leftJoinAndSelect('channel.users', 'member')
-        .where('channel.type = :type', { type: 'personal' })
-        .andWhere('channel.name LIKE :key', { key: `%${key}%` })
-        .limit(limit)
-        .getMany();
-    // Phân loại kênh
-    const personal: any[] = [];
-    const group: any[] = [];
-    const privateChannels: any[] = [];
-    for (const channel of foundChannels) {
-      const isMember = channel.users?.some(u => String(u.id) === String(user.id));
-      // Nếu là kênh personal, hiển thị tên là tên user còn lại
-      if (channel.type === 'personal') {
-        const otherUser = (channel.users || []).find(u => String(u.id) !== String(user.id));
-        const { users, ...rest } = channel;
-        personal.push({
-          ...rest,
-          name: otherUser ? otherUser.username : channel.name,
-          isMember,
-        });
-      } else if (channel.type === 'group') {
-        const { users, ...rest } = channel;
-        group.push({
-          ...rest,
-          isMember,
-        });
-      } else if (channel.type === 'group-private') {
-        // Chỉ hiển thị nếu user là member
-        if (isMember) {
-          const { users, ...rest } = channel;
-          privateChannels.push({
-            ...rest,
-            isMember,
-          });
-        }
-      }
-    }
-    return {
-      users,
-      channels: {
-        personal,
-        group,
-        private: privateChannels,
-      },
+      return users.map(u => this.remove_field_user({ ...u }));
     };
+
+    const searchGroupChannels = async () => {
+      const channels:any = await this.channelRepo
+        .createQueryBuilder('c')
+        .select(['c.id', 'c.name', 'c.type'])
+        .where('c.type = :type', { type: 'group' })
+        .andWhere('LOWER(c.name) LIKE :key', { key: `%${key}%` })
+        .take(limit)
+        .getMany();
+
+      // check membership (chỉ query id thôi cho nhẹ)
+      const memberIds = await this.channelRepo
+        .createQueryBuilder('c')
+        .innerJoin('c.users', 'u', 'u.id = :uid', { uid: user.id })
+        .select('c.id', 'id')
+        .where('c.type = :type', { type: 'group' })
+        .getRawMany();
+
+      const memberSet = new Set(memberIds.map(m => m.id));
+      return channels.map((ch:any) => ({ ...ch, isMember: memberSet.has(ch.id) }));
+    };
+
+    const searchPrivateChannels = async () => {
+      const channels = await this.channelRepo
+        .createQueryBuilder('c')
+        .innerJoin('c.users', 'u', 'u.id = :uid', { uid: user.id }) // chỉ lấy kênh user là thành viên
+        .select(['c.id', 'c.name', 'c.type'])
+        .where('c.type = :type', { type: 'group-private' })
+        .andWhere('LOWER(c.name) LIKE :key', { key: `%${key}%` })
+        .take(limit)
+        .getMany();
+
+      return channels.map(ch => ({ ...ch, isMember: true }));
+    };
+
+const searchPersonalChannels = async () => {
+  const channels = await this.channelRepo
+    .createQueryBuilder('c')
+    .innerJoin('c.users', 'u') // user hiện tại
+    .innerJoin('c.users', 'ou') // other user
+    .select(['c.id', 'c.type', 'ou.username']) // chỉ cần id, type, username
+    .where('c.type = :type', { type: 'personal' })
+    .andWhere('u.id = :uid', { uid: user.id })
+    .andWhere('ou.id != :uid', { uid: user.id })
+    .andWhere('LOWER(ou.username) LIKE :key', { key: `%${key}%` })
+    .take(limit)
+    .getRawMany(); // dùng rawMany cho tiện mapping
+
+  return channels.map(ch => ({
+    id: ch.c_id,
+    type: ch.c_type,
+    name: ch.ou_username, // đặt tên kênh = username của member còn lại
+    isMember: true,
+  }));
+};
+
+
+    // ---- Main logic ----
+    const result:any = { users: [], channels: { personal: [], group: [], private: [] } };
+
+    if (type === 'user') {
+      result.users = await searchUsers();
+    } else if (type === 'group') {
+      result.channels.group = await searchGroupChannels();
+    } else if (type === 'group-private') {
+      result.channels.private = await searchPrivateChannels();
+    } else if (type === 'personal') {
+      result.channels.personal = await searchPersonalChannels();
+    } else {
+      // all
+      [result.users, result.channels.group, result.channels.private, result.channels.personal] =
+        await Promise.all([
+          searchUsers(),
+          searchGroupChannels(),
+          searchPrivateChannels(),
+          searchPersonalChannels(),
+        ]);
+    }
+
+    return result;
   }
+
 
 }
