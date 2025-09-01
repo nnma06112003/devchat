@@ -21,6 +21,8 @@ export class ChatController {
         return await this.chatService.listChannels(payload.data.user);
       case 'searchChatEntities':
         return await this.chatService.searchChatEntities(payload.data.user, payload.data);
+      case 'joinChannel':
+        return await this.chatService.joinChannel(payload.data.user, payload.data);
       default:
         return { error: 'Unknown command' };
     }

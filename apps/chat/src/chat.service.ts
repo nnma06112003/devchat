@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -9,6 +8,12 @@ import { RpcException } from '@nestjs/microservices';
 
 @Injectable()
 export class ChatService extends BaseService<Message | Channel> {
+  /**
+   * Tham gia kênh chat
+   * @param user user hiện tại
+   * @param data { id: string, type: 'group' | 'personal' }
+   */
+  
   constructor(
     @InjectRepository(Message)
     private readonly messageRepo: Repository<Message>,
@@ -18,6 +23,71 @@ export class ChatService extends BaseService<Message | Channel> {
     private readonly userRepo: Repository<User>,
   ) {
     super(messageRepo);
+  }
+
+
+  async joinChannel(user: any, data: { id: string, type: 'group' | 'personal' }) {
+    if (!user || !user.id) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
+    }
+    if (!data?.id || !data?.type) {
+      throw new RpcException({ msg: 'Thiếu thông tin kênh hoặc loại kênh', status: 400 });
+    }
+    if (data.type === 'group') {
+      // Tìm kênh group
+      const channel = await this.channelRepo.findOne({
+        where: { id: data.id, type: 'group' },
+        relations: ['users'],
+      });
+      if (!channel) {
+        throw new RpcException({ msg: 'Không tìm thấy kênh công khai', status: 404 });
+      }
+      // Kiểm tra user đã là thành viên chưa
+      const isMember = channel.users.some(u => String(u.id) === String(user.id));
+      if (isMember) {
+        throw new RpcException({ msg: 'Bạn đã là thành viên của kênh này', status: 401 });
+      }
+      // Thêm user vào kênh
+      channel.users.push(user);
+      channel.member_count = channel.users.length;
+      await this.channelRepo.save(channel);
+      return {
+        msg: 'Tham gia kênh thành công',
+        channelId: channel.id,
+      };
+    } else if (data.type === 'personal') {
+      // Tìm user còn lại
+      const otherUser = await this.userRepo.findOne({ where: { id: data.id } });
+      if (!otherUser) {
+        throw new RpcException({ msg: 'Không tìm thấy người dùng còn lại', status: 404 });
+      }
+      // Kiểm tra đã có kênh personal giữa 2 user chưa
+      const existChannel = await this.channelRepo
+        .createQueryBuilder('channel')
+        .leftJoinAndSelect('channel.users', 'member')
+        .where('channel.type = :type', { type: 'personal' })
+        .andWhere('member.id IN (:...ids)', { ids: [user.id, otherUser.id] })
+        .getMany();
+      // Lọc kênh có đúng 2 thành viên là 2 user này
+      const found = existChannel.find(c => c.users.length === 2 && c.users.some(u => String(u.id) === String(user.id)) && c.users.some(u => String(u.id) === String(otherUser.id)));
+      if (found) {
+        throw new RpcException({ msg: 'Bạn đã nhắn tin với người này', status: 401 });
+      }
+      // Tạo kênh mới
+      const channel = this.channelRepo.create({
+        name: 'Personal Chat',
+        type: 'personal',
+        users: [user, otherUser],
+        member_count: 2,
+      });
+      const saved = await this.channelRepo.save(channel);
+      return {
+        msg: 'Hai bạn có thể nhắn tin với nhau',
+        channelId: saved.id,
+      };
+    } else {
+      throw new RpcException({ msg: 'Kênh không hợp lệ', status: 400 });
+    }
   }
  async createChannel(
   user: any,
@@ -31,7 +101,9 @@ export class ChatService extends BaseService<Message | Channel> {
     throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
   }
 
-  let memberIds = [...params.userIds];
+   let memberIds = [...params.userIds];
+   
+
 
   // Không cho user.id trùng trong userIds
   memberIds = memberIds.filter((id) => id !== user.id);
@@ -159,6 +231,7 @@ export class ChatService extends BaseService<Message | Channel> {
     // Query messages bằng queryBuilder
     const msgQB = this.messageRepo
       .createQueryBuilder('message')
+      .leftJoinAndSelect('message.sender', 'sender')
       .where('message.channelId = :channelId', { channelId: channel.id });
 
     // Cursor after
@@ -192,13 +265,29 @@ export class ChatService extends BaseService<Message | Channel> {
       username: u.username,
       email: u.email,
       isMine: u.id === user.id,
-    }));
+    })); 
 
-    // Trả về user_id cho từng tin nhắn
-    const itemsWithUserId = items.map(msg => ({
-      ...msg,
-      user_id: (msg.sender && typeof msg.sender === 'object') ? msg.sender.id : msg.sender,
-    }));
+    // Trả về user_id và thông tin sender đã xử lý cho từng tin nhắn
+      const itemsWithUserId = items.map(msg => {
+        let senderInfo = undefined;
+        let isMine = false;
+        if (msg.sender) {
+          if (typeof msg.sender === 'object') {
+            senderInfo = this.remove_field_user({ ...msg.sender });
+            isMine = String(msg.sender.id) === String(user.id);
+          } else {
+            // Nếu sender là id, cần lấy thông tin user
+            const senderObj = (channel.users || []).find(u => String(u.id) === String(msg.sender));
+            senderInfo = senderObj ? this.remove_field_user({ ...senderObj }) : undefined;
+            isMine = String(msg.sender) === String(user.id);
+          }
+        }
+        return {
+          ...msg,
+          sender: senderInfo,
+          isMine,
+        };
+      });
 
     const { users, ...channelInfo } = channel;
     return {

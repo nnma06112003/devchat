@@ -44,7 +44,14 @@ async githubOAuth(@Query('code') code: string) {
     return this.gw.exec('auth', 'verify_token', dto);
   }
 
-
+ @UseGuards(JwtAuthGuard)
+  @Post('channels/join-channel')
+  async joinChannel(@Body() dto: any, @Req() req: Request) {
+    // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'joinChannel', payload);
+  }
  // ---------- CHAT ----------
   // FE: POST /api/channels/:channelId/messages
   // Body: { text: string, snippetId?: string }
