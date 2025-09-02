@@ -13,6 +13,7 @@ import { User } from './user.entity';
 
 @Entity('messages')
 export class Message {
+  
   @PrimaryGeneratedColumn()
   id: number | string;
 
@@ -26,6 +27,9 @@ export class Message {
 
   @ManyToOne(() => User, { nullable: false, onDelete: 'SET NULL' })
   sender: User;
+
+  @Column({ type: 'timestamp', nullable: true })
+  send_at?: Date;
 
   @CreateDateColumn()
   created_at: Date;

@@ -67,7 +67,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     @MessageBody() data: { channelId: string; text: string },
     @ConnectedSocket() client: AuthSocket,
   ) {
-    const message = { ...data, senderId: client.user?.id };
-    await this.chatSocketService.sendMessageToChannel(data.channelId, message);
+    const message = { user: client?.user, ...data };
+    await this.chatSocketService.sendMessageToChannel(message);
   }
 }

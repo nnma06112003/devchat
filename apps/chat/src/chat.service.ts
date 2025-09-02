@@ -159,7 +159,7 @@ export class ChatService extends BaseService<Message | Channel> {
 }
 
   // Gửi tin nhắn vào channel
-  async sendMessage(user: any, data: { channelId: string; text: string; snippetId?: string }) {
+  async sendMessage(user: any, data: { channelId: string; text: string , send_at:any }) {
     const channel = await this.check_exist_with_data(
       Channel,
       { id: data.channelId },
@@ -171,6 +171,7 @@ export class ChatService extends BaseService<Message | Channel> {
       ...data,
       channel,
       sender,
+      send_at: data.send_at
     });
     await this.messageRepo.save(message);
     return message;

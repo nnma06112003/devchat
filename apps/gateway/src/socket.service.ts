@@ -1,6 +1,9 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import Redis from 'ioredis';
+import { GatewayService } from './gateway.service';
+import { text } from 'stream/consumers';
+import { Message } from '@myorg/entities';
 
 export type AuthSocket = Socket & { user?: { id: string } };
 
@@ -9,7 +12,8 @@ export type AuthSocket = Socket & { user?: { id: string } };
 export class ChatSocketService {
   private server: Server;
 
-  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
+    constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis,private readonly gw: GatewayService) { }
+
 
   setServer(server: Server) {
     this.server = server;
@@ -66,13 +70,74 @@ export class ChatSocketService {
   async switchChannel(client: AuthSocket, oldChannelId: string, newChannelId: string) {
     this.leaveChannel(client, oldChannelId);
     await this.joinChannel(client, newChannelId);
-  }
+  } 
 
   /** Send message */
-  async sendMessageToChannel(channelId: string, message: any) {
-    this.server.to(channelId).emit('receiveMessage', message);
-    await this.incrementUnread(channelId, message.senderId);
+async sendMessageToChannel(message: { channelId: string; text: string; user: any }) {
+  const tempId = Date.now(); // id tạm thời cho pending message
+  const now = new Date().toISOString();
+
+  // 1. Emit tin nhắn pending cho chính sender
+//   const pendingMsg: any = {
+//     id: tempId,
+//     text: message.text,
+//     created_at: now,  // tạm coi created_at = thời gian client gửi
+//     updated_at: null,
+//     sender: {
+//       id: message.user.id,
+//       username: message.user.username,
+//       email: message.user.email,
+//     },
+//     isMine: true,
+//     // status: 'pending',
+//   };
+
+//   this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
+
+  try {
+    // 2. Lưu DB
+    const savedMsg = await this.gw.exec('chat', 'sendMessage', { ...message, send_at: now });
+
+    // 3. Emit bản tin chính thức
+    const msg: any= {
+      id: savedMsg.id,
+      text: savedMsg.text,
+      created_at: savedMsg.created_at,
+      updated_at: savedMsg.updated_at,
+      sender: {
+        id: savedMsg.sender.id || message.user.id,
+        username: savedMsg.sender.username || message.user.username,
+        email: savedMsg.sender.email || message.user.email,
+      },
+      isMine: savedMsg.sender.id === message.user.id,
+    //   status: 'delivered',
+    };
+
+    this.server.to(message.channelId).emit('receiveMessage', msg);
+
+    // 4. Tăng unread cho các user khác
+    await this.incrementUnread(message.channelId, message.user.id);
+  } catch (err) {
+    // 5. Emit lỗi cho sender
+    const failedMsg: any = {
+      id: tempId,
+      text: message.text,
+      created_at: now,
+      updated_at: null,
+      sender: {
+        id: message.user.id,
+        username: message.user.username,
+        email: message.user.email,
+      },
+      isMine: true,
+    //   status: 'failed',
+    };
+
+    this.server.to(message.channelId).emit('receiveMessage', failedMsg);
   }
+}
+
+
 
   /** Tăng unread */
   private async incrementUnread(channelId: string, senderId: string) {
