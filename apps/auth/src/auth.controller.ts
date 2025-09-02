@@ -21,7 +21,7 @@ export class AuthController {
       case 'get_profile':
         return this.authService.getProfile(data.userId);
       case 'github_oauth':
-        return this.authService.loginGithubOAuth(data.code);
+        return this.authService.loginGithubOAuth(data);
       case 'searchUsers':
         return this.authService.searchUsers(data?.data);
       default:

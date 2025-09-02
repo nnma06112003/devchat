@@ -20,22 +20,19 @@ import { Like, Repository } from 'typeorm';
 @Injectable()
 export class AuthService {
   // Tìm kiếm user theo username hoặc email
-  
+
   constructor(
-     @InjectRepository(User)
-        private readonly userRepo: Repository<User>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private userRepository: UserRepository,
     private jwtService: JwtService,
-  ) { }
+  ) {}
   async searchUsers(params: { key: string; limit?: number }): Promise<any[]> {
     const key = (params.key || '').trim();
     const limit = params.limit ?? 10;
     if (!key) return [];
     const users = await this.userRepo.find({
-      where: [
-        { username: Like(`%${key}%`) },
-        { email: Like(`%${key}%`) },
-      ],
+      where: [{ username: Like(`%${key}%`) }, { email: Like(`%${key}%`) }],
       take: limit,
     });
     // Trả về thông tin cơ bản, loại bỏ trường nhạy cảm
