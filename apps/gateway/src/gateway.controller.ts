@@ -32,6 +32,11 @@ export class GatewayController {
     return this.gw.exec('auth', 'login', dto);
   }
 
+  @Post('auth/register')
+  async register(@Body() dto: any) {
+    return this.gw.exec('auth', 'register', dto);
+  }
+
   // FE: POST /api/auth/get_profile
   // Body: { userId: string }
   @Post('auth/get-profile')
