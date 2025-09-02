@@ -37,7 +37,7 @@ services:
       - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
       - ./docker/pgadmin/pgpass:/pgadmin4/pgpass:ro
     networks:
-      - chatnet                     # 👈 đổi network
+      - chatnet
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,6 +79,23 @@ services:
       mongodb:
         condition: service_healthy
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - chatnet
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
@@ -96,8 +113,8 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - '9092:9092' # container network
-      - '29092:29092' # host network
+      - '9092:9092'
+      - '29092:29092'
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -124,7 +141,8 @@ volumes:
   postgres_data:
   pgadmin_data:
   mongodb_data:
+  redis_data:
 
 networks:
-  chatnet:        
+  chatnet:
     driver: bridge
