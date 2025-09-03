@@ -109,7 +109,11 @@ export class ChatService extends BaseService<Message | Channel> {
 
    let memberIds = [...params.userIds];
    
-
+const owner = await this.check_exist_with_data(
+    User,
+    { id: user.id },
+    'Tài khoản không hợp lệ',
+  );
 
   // Không cho user.id trùng trong userIds
   memberIds = memberIds.filter((id) => id !== user.id);
@@ -123,7 +127,9 @@ export class ChatService extends BaseService<Message | Channel> {
     User,
     { id: In(memberIds) },
     'Danh sách thành viên không hợp lệ',
-  );
+   );
+   
+
 
   if (members.length !== memberIds.length) {
     throw new RpcException({ msg: 'Thiếu thành viên kênh chat', status: 400 });
@@ -139,10 +145,11 @@ export class ChatService extends BaseService<Message | Channel> {
   }
 
   const channel = this.channelRepo.create({
-    name: params.name || (type === 'personal' ? `Personal Chat` : `Group Chat`),
-    type,
-    users: members,
-    member_count: members.length,
+  name: params.name || (type === 'personal' ? `Personal Chat` : `Group Chat`),
+  type,
+  users: members,
+  member_count: members.length,
+  owner: (type === 'group' || type === 'group-private') ? owner : undefined,
   });
 
     const saved = await this.channelRepo.save(channel);
@@ -193,24 +200,31 @@ export class ChatService extends BaseService<Message | Channel> {
       .where('user.id = :userId', { userId: user?.id })
       .getMany();
     // Trả về danh sách channel, mỗi channel có mảng members đã loại bỏ trường nhạy cảm
-    return channels.map(channel => {
+    const result = [];
+    for (const channel of channels) {
+      let isActive = true;
       let channelName = channel.name;
       if (channel.type === 'personal') {
+        const msgCount = await this.messageRepo.count({ where: { channel: { id: channel.id } } });
+        isActive = msgCount > 0;
         const otherUser = (channel.users || []).find(u => String(u.id) !== String(user.id));
         if (otherUser && otherUser.username) {
           channelName = otherUser.username;
         }
       }
-      return {
+      // group và group-private luôn isActive = true
+      result.push({
         id: channel.id,
         name: channelName,
         type: channel.type,
         member_count: channel.member_count,
         created_at: channel.created_at,
         updated_at: channel.updated_at,
+        isActive,
         // members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
-      };
-    });
+      });
+    }
+    return result;
   }
 
   /**
@@ -239,6 +253,7 @@ export class ChatService extends BaseService<Message | Channel> {
     // Kiểm tra user có trong channel không
     const channel = await this.channelRepo
       .createQueryBuilder('channel')
+      .leftJoinAndSelect('channel.owner', 'owner')
       .leftJoinAndSelect('channel.users', 'member')
       .leftJoin('channel.users', 'user')
       .where('channel.id = :channelId', { channelId })
@@ -285,6 +300,7 @@ export class ChatService extends BaseService<Message | Channel> {
       username: u.username,
       email: u.email,
       isMine: u.id === user.id,
+      isOwner: channel.owner && u.id === channel.owner.id,
     })); 
 
     // Trả về user_id và thông tin sender đã xử lý cho từng tin nhắn
@@ -337,7 +353,7 @@ export class ChatService extends BaseService<Message | Channel> {
       const users = await this.userRepo
         .createQueryBuilder('u')
         .select(['u.id', 'u.username', 'u.email'])
-        .where('LOWER(u.username) LIKE :key OR LOWER(u.email) LIKE :key', { key: `%${key}%` })
+        .where('(LOWER(u.username) LIKE :key OR LOWER(u.email) LIKE :key) AND u.id != :uid', { key: `%${key}%`, uid: user.id })
         .take(limit)
         .getMany();
       return users.map(u => this.remove_field_user({ ...u }));

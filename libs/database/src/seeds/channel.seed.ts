@@ -28,6 +28,7 @@ export class ChannelSeeder {
         type: 'group',
         users: members,
         member_count: members.length,
+        owner: members[0], // user đầu tiên là owner
       });
 
       channels.push(channel);

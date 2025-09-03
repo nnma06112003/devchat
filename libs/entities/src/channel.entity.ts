@@ -8,6 +8,9 @@ import {
   UpdateDateColumn,
   ManyToMany,
   JoinTable,
+  OneToOne,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { Message } from './message.entity';
 import { User } from './user.entity';
@@ -42,4 +45,8 @@ export class Channel {
     inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' },
   })
   users: User[];
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn()
+  owner?: User;
 }

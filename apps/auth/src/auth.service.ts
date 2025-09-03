@@ -15,7 +15,7 @@ import { RpcCustomException } from '@myorg/common';
 import { RpcException } from '@nestjs/microservices';
 import { User } from '@myorg/entities';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { Like, Repository, Not } from 'typeorm';
 
 @Injectable()
 export class AuthService {
@@ -27,14 +27,14 @@ export class AuthService {
     private userRepository: UserRepository,
     private jwtService: JwtService,
   ) { }
-  async searchUsers(params: { key: string; limit?: number }): Promise<any[]> {
+  async searchUsers(user:any,params: { key: string; limit?: number }): Promise<any[]> {
     const key = (params.key || '').trim();
     const limit = params.limit ?? 10;
-    if (!key) return [];
+    if (!key || !user || !user.id) return [];
     const users = await this.userRepo.find({
       where: [
-        { username: Like(`%${key}%`) },
-        { email: Like(`%${key}%`) },
+        { username: Like(`%${key}%`), id: Not(user.id) },
+        { email: Like(`%${key}%`), id: Not(user.id) },
       ],
       take: limit,
     });

@@ -23,7 +23,7 @@ export class AuthController {
       case 'github_oauth':
         return this.authService.loginGithubOAuth(data.code);
       case 'searchUsers':
-        return this.authService.searchUsers(data?.data);
+        return this.authService.searchUsers(data.user, data.data);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }
