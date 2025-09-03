@@ -20,10 +20,10 @@ import { Like, Repository, Not } from 'typeorm';
 @Injectable()
 export class AuthService {
   // Tìm kiếm user theo username hoặc email
-  
+
   constructor(
-     @InjectRepository(User)
-        private readonly userRepo: Repository<User>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private userRepository: UserRepository,
     private jwtService: JwtService,
   ) { }

@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards ,Req  } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Request } from 'express';
@@ -10,17 +19,22 @@ export class GatewayController {
 
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
-  @Get('auth/github-oauth')
-async githubOAuth(@Query('code') code: string) {
-  // gọi AuthService qua Kafka
-  return this.gw.exec('auth', 'github_oauth', { code });
-}
+  @Post('auth/github-oauth')
+  async githubOAuth(@Body('code') code: string) {
+    // gọi AuthService qua Kafka
+    return this.gw.exec('auth', 'github_oauth', code);
+  }
   // FE: POST /api/auth/login
   // Body: { email: string, password: string, otp?: string }
   @Post('auth/login')
   async login(@Body() dto: any) {
     // uỷ quyền cho AuthService: { cmd: 'login' }
     return this.gw.exec('auth', 'login', dto);
+  }
+
+  @Post('auth/register')
+  async register(@Body() dto: any) {
+    return this.gw.exec('auth', 'register', dto);
   }
 
   // FE: POST /api/auth/get_profile
@@ -44,7 +58,7 @@ async githubOAuth(@Query('code') code: string) {
     return this.gw.exec('auth', 'verify_token', dto);
   }
 
- @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('channels/join-channel')
   async joinChannel(@Body() dto: any, @Req() req: Request) {
     // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
@@ -52,7 +66,7 @@ async githubOAuth(@Query('code') code: string) {
     const payload = { user, ...dto };
     return this.gw.exec('chat', 'joinChannel', payload);
   }
- // ---------- CHAT ----------
+  // ---------- CHAT ----------
   // FE: POST /api/channels/:channelId/messages
   // Body: { text: string, snippetId?: string }
   // Param: channelId: string
@@ -84,27 +98,25 @@ async githubOAuth(@Query('code') code: string) {
   @Get('channels/list-channels')
   async listChannels(
     @Query() q: any,
-    @Req() req: Request,   // 👈 lấy request
+    @Req() req: Request, // 👈 lấy request
   ) {
     const user = req.user as any; // JwtAuthGuard đã inject user vào đây
     return this.gw.exec('chat', 'listChannels', {
-      user,   // 👈 truyền userId sang service chat
+      user, // 👈 truyền userId sang service chat
       ...q,
     });
   }
 
-
-
   @UseGuards(JwtAuthGuard)
   @Get('channels/list-messages/:channel_id')
   async listMessages(
-    @Param('channel_id') channel_id: string, 
+    @Param('channel_id') channel_id: string,
     @Query() q: any,
-    @Req() req: Request,   // 👈 lấy request
+    @Req() req: Request, // 👈 lấy request
   ) {
     const user = req.user as any; // JwtAuthGuard đã inject user vào đây
     return this.gw.exec('chat', 'listChannelsMessages', {
-      user,   // 👈 truyền userId sang service chat
+      user, // 👈 truyền userId sang service chat
       channel_id,
       ...q,
     });
@@ -114,12 +126,12 @@ async githubOAuth(@Query('code') code: string) {
   @Get('channels/search-chat')
   async SearchChat(
     @Query() q: any,
-    @Req() req: Request,   // 👈 lấy request
-  ) {  
+    @Req() req: Request, // 👈 lấy request
+  ) {
     const user = req.user as any; // JwtAuthGuard đã inject user vào đây
     return this.gw.exec('chat', 'searchChatEntities', {
       user,
-      data: { key: q?.key, type: q?.type ?? '' ,limit: q?.limit ?? 5 },
+      data: { key: q?.key, type: q?.type ?? '', limit: q?.limit ?? 5 },
       ...q,
     });
   }
@@ -128,8 +140,8 @@ async githubOAuth(@Query('code') code: string) {
   @Get('users/search-user')
   async SearchUsers(
     @Query() q: any,
-    @Req() req: Request,   // 👈 lấy request
-  ) {  
+    @Req() req: Request, // 👈 lấy request
+  ) {
     const user = req.user as any; // JwtAuthGuard đã inject user vào đây
     return this.gw.exec('auth', 'searchUsers', {
       user,
@@ -137,6 +149,4 @@ async githubOAuth(@Query('code') code: string) {
       ...q,
     });
   }
-
-  
 }
