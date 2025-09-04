@@ -107,6 +107,15 @@ export class GatewayController {
     });
   }
 
+
+
+  @UseGuards(JwtAuthGuard)
+  @Get('users/list-online')
+  async listOnlineUser() {
+    // JwtAuthGuard đã inject user vào đây
+    return this.gw.getAllOnlineUsers();
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('channels/list-messages/:channel_id')
   async listMessages(

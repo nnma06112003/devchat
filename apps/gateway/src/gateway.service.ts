@@ -6,11 +6,13 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
+import Redis from 'ioredis';
 import { lastValueFrom, timeout } from 'rxjs';
 
 @Injectable()
 export class GatewayService implements OnModuleInit {
   constructor(
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @Inject('KAFKA_GATEWAY') private readonly kafka: ClientKafka,
     @Inject('GATEWAY_TOPICS') private readonly topics: string[],
   ) {}
@@ -68,6 +70,30 @@ export class GatewayService implements OnModuleInit {
       );
     }
   }
+
+
+
+  async getAllOnlineUsers(): Promise<{ code: number; msg: string; data: string[] }> {
+  const all = await this.redis.hgetall("user_status");
+  const onlineUsers: string[] = [];
+
+  for (const [uid, data] of Object.entries(all)) {
+    try {
+      const status = JSON.parse(data);
+      if (status.online) {
+        onlineUsers.push(uid);
+      }
+    } catch (err) {
+      console.error("❌ Parse user_status lỗi", uid, err);
+    }
+  }
+
+  return {
+    code: 200,
+    msg: 'OK',
+    data: onlineUsers,
+  };
+}
 
   emit(service: string, cmd: string, data: any) {
     const topic = `svc.${service}.exec`;

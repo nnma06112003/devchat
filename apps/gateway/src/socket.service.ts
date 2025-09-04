@@ -20,33 +20,90 @@ export class ChatSocketService {
   }
 
   /** User online */
-  async markUserOnline(userId: string, socketId: string) {
+async markUserOnline(userId: string, socketId: string) {
   if (!userId) return;
 
-  await this.redis.hset('user_status', userId, JSON.stringify({
-    online: true,
-    lastSeen: Date.now(),
-    socketId,   // 👈 lưu thêm socketId
-  }));
+  // Cập nhật Redis
+  await this.redis.hset(
+    "user_status",
+    userId,
+    JSON.stringify({
+      online: true,
+      lastSeen: Date.now(),
+      socketId,
+    })
+  );
+
+  // Lấy toàn bộ user_status từ Redis
+  const all = await this.redis.hgetall("user_status");
+
+  // Lọc ra những user đang online
+  const onlineUsers: string[] = [];
+  for (const [uid, data] of Object.entries(all)) {
+    try {
+      const status = JSON.parse(data);
+      if (status.online) {
+        onlineUsers.push(uid);
+      }
+    } catch (err) {
+      console.error("❌ Parse user_status lỗi", uid, err);
+    }
+  }
 
   console.log(`🟢 User online: ${userId} - socket ${socketId}`);
-  this.server.emit('presenceUpdate', { online: [userId], offline: [] });
+  console.log(`📢 Online list: ${onlineUsers.join(", ")}`);
+
+  // Emit danh sách online đầy đủ
+  this.server.emit("presenceUpdate", {
+    online: onlineUsers,
+    offline: [],
+  });
 }
 
 
-  /** User offline */
-  async markUserOffline(userId: string) {
-    if (!userId) return;
 
-    const lastSeen = Date.now();
-    await this.redis.hset('user_status', userId, JSON.stringify({
+  /** User offline */
+async markUserOffline(userId: string) {
+  if (!userId) return;
+
+  const lastSeen = Date.now();
+
+  // Cập nhật trạng thái offline vào Redis
+  await this.redis.hset(
+    "user_status",
+    userId,
+    JSON.stringify({
       online: false,
       lastSeen,
-    }));
+    })
+  );
 
-    console.log(`🔴 User offline: ${userId}`);
-    this.server.emit('presenceUpdate', { online: [], offline: [{ userId, lastSeen }] });
+  // Lấy toàn bộ user_status từ Redis
+  const all = await this.redis.hgetall("user_status");
+
+  // Lọc ra user đang online
+  const onlineUsers: string[] = [];
+  for (const [uid, data] of Object.entries(all)) {
+    try {
+      const status = JSON.parse(data);
+      if (status.online) {
+        onlineUsers.push(uid);
+      }
+    } catch (err) {
+      console.error("❌ Parse user_status lỗi", uid, err);
+    }
   }
+
+  console.log(`🔴 User offline: ${userId}`);
+  console.log(`📢 Online list: ${onlineUsers.join(", ")}`);
+
+  // Emit: danh sách online hiện tại + user vừa offline
+  this.server.emit("presenceUpdate", {
+    online: onlineUsers,
+    offline: [{ userId, lastSeen }],
+  });
+}
+
 
   /** Lấy trạng thái 1 user */
   async getUserStatus(userId: string) {
