@@ -154,35 +154,72 @@ const owner = await this.check_exist_with_data(
 
     const saved = await this.channelRepo.save(channel);
     // Lấy lại bản ghi channel vừa tạo (đảm bảo có id và members)
-    const fullChannel = await this.channelRepo.findOne({
+    const fullChannel :any= await this.channelRepo.findOne({
       where: { id: saved.id },
       relations: ['users'],
     });
-   const { users, ...rest }:any = fullChannel;
+   
+
+    let isActive = true;
+      let channelName = fullChannel.name;
+      if (fullChannel.type === 'personal') {
+        const msgCount = await this.messageRepo.count({ where: { channel: { id: fullChannel.id } } });
+        isActive = msgCount > 0;
+        const otherUser = (fullChannel.users || []).find((u:any) => String(u.id) !== String(user.id));
+        if (otherUser && otherUser.username) {
+          channelName = otherUser.username;
+        }
+      }
+   const { users, name, ...rest }: any = fullChannel;
     return {
       ...rest,
-      members: (fullChannel?.users || []).map(u => this.remove_field_user({ ...u })),
+      name: channelName,
+      isActive,
+      members: (fullChannel?.users || []).map((u:any) => this.remove_field_user({ ...u })),
     };
 }
 
   // Gửi tin nhắn vào channel
-  async sendMessage(user: any, data: { channelId: string; text: string , send_at:any }) {
-    const channel = await this.check_exist_with_data(
-      Channel,
-      { id: data.channelId },
-      'Kênh chat không tồn tại',
-    );
-    const sender = await this.check_exist_with_data(User, { id: user.id }, 'Người gửi không tồn tại');
-    if (!channel) throw new RpcException({ msg: 'Kênh chat không tồn tại', status: 404 });
-    const message = this.messageRepo.create({
-      ...data,
-      channel,
-      sender,
-      send_at: data.send_at
-    });
-    await this.messageRepo.save(message);
-    return message;
+async sendMessage(user: any, data: { channelId: string; text: string; send_at: any }) {
+  const channel = await this.check_exist_with_data(
+    Channel,
+    { id: data.channelId },
+    'Kênh chat không tồn tại',
+  );
+  const sender = await this.check_exist_with_data(User, { id: user.id }, 'Người gửi không tồn tại');
+  if (!channel) throw new RpcException({ msg: 'Kênh chat không tồn tại', status: 404 });
+  
+  const message = this.messageRepo.create({
+    ...data,
+    channel,
+    sender,
+    send_at: data.send_at,
+  });
+  await this.messageRepo.save(message);
+  const msgCount = await this.messageRepo.count({ where: { channel: { id: channel.id } } });
+
+  // Đếm số message trong channel
+
+  if (msgCount === 1) {
+    // Đây là message đầu tiên trong channel
+    return {
+      ...message,
+      channel: {
+        id: channel.id,
+        type: channel.type,
+        member_count: channel.member_count,
+        members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
+        created_at: channel.created_at,
+        updated_at: channel.updated_at,
+        isActive: true,
+      },
+    };
   }
+
+  // Nếu không phải message đầu tiên → chỉ trả về message
+  return message;
+}
+
 
 
 
@@ -218,6 +255,7 @@ const owner = await this.check_exist_with_data(
         name: channelName,
         type: channel.type,
         member_count: channel.member_count,
+        members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
         created_at: channel.created_at,
         updated_at: channel.updated_at,
         isActive,

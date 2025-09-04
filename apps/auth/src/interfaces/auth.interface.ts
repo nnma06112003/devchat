@@ -14,6 +14,7 @@ export interface User {
 export interface JwtPayload {
   sub: string;
   email: string;
+  username: string,
   role: UserRole;
   iat?: number;
   exp?: number;

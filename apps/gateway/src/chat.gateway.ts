@@ -21,9 +21,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   }
 
   async handleConnection(client: AuthSocket) {
-    const userId = client.user?.id || client.data?.user?.id;
-    if (userId) {
-      await this.chatSocketService.markUserOnline(userId);
+  const userId = client.user?.id || client.data?.user?.id;
+  if (userId) {
+    await this.chatSocketService.markUserOnline(userId, client.id);
 
       // gửi lại unread khi reconnect
       const unreadMap = await this.chatSocketService.getUnreadMap(userId);
@@ -49,6 +49,12 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     await this.chatSocketService.joinChannel(client, data.channelId);
   }
 
+  @SubscribeMessage('create_channel')
+  async handleCreateChannel(@MessageBody() data: any, @ConnectedSocket() client: AuthSocket) {
+    const message = { user: client?.user, ...data };
+    await this.chatSocketService.createChannel(message);
+  }
+
   @SubscribeMessage('leave_channel')
   handleLeaveChannel(@MessageBody() data: { channelId: string }, @ConnectedSocket() client: AuthSocket) {
     this.chatSocketService.leaveChannel(client, data.channelId);
@@ -64,7 +70,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   @SubscribeMessage('send_message')
   async handleSendMessage(
-    @MessageBody() data: { channelId: string; text: string },
+    @MessageBody() data: any,
     @ConnectedSocket() client: AuthSocket,
   ) {
     const message = { user: client?.user, ...data };

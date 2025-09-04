@@ -112,6 +112,7 @@ export class AuthService {
     const payload: any = {
       sub: user.id,
       email: user.email,
+      username: user.username,
       role: user.role,
     };
 
@@ -149,6 +150,7 @@ export class AuthService {
     const payload: any = {
       sub: user.id,
       email: user.email,
+      username: user.username,
       role: user.role,
     };
     const access_token = this.jwtService.sign(payload);
@@ -188,6 +190,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
+      username: user.username,
       role: user.role,
     };
     const access_token = this.jwtService.sign(payload);
@@ -213,8 +216,7 @@ export class AuthService {
       const userData = {
         id: user?.id,
         email: user?.email,
-        firstName: user?.firstName,
-        lastName: user?.lastName,
+        username: user?.username,
         role: user?.role,
       };
       return userData;
@@ -235,8 +237,7 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      username: user.username,
       role: user.role,
       created_at: user.created_at,
       updated_at: user.updated_at,
@@ -265,9 +266,10 @@ export class AuthService {
     }
 
     // 2. Tạo access_token mới
-    const payload: any = {
+    const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
+      username: user.username,
       role: user.role,
     };
 

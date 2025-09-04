@@ -20,17 +20,19 @@ export class ChatSocketService {
   }
 
   /** User online */
-  async markUserOnline(userId: string) {
-    if (!userId) return;
+  async markUserOnline(userId: string, socketId: string) {
+  if (!userId) return;
 
-    await this.redis.hset('user_status', userId, JSON.stringify({
-      online: true,
-      lastSeen: Date.now(),
-    }));
+  await this.redis.hset('user_status', userId, JSON.stringify({
+    online: true,
+    lastSeen: Date.now(),
+    socketId,   // 👈 lưu thêm socketId
+  }));
 
-    console.log(`🟢 User online: ${userId}`);
-    this.server.emit('presenceUpdate', { online: [userId], offline: [] });
-  }
+  console.log(`🟢 User online: ${userId} - socket ${socketId}`);
+  this.server.emit('presenceUpdate', { online: [userId], offline: [] });
+}
+
 
   /** User offline */
   async markUserOffline(userId: string) {
@@ -72,70 +74,117 @@ export class ChatSocketService {
     await this.joinChannel(client, newChannelId);
   } 
 
-  /** Send message */
-async sendMessageToChannel(message: { channelId: string; text: string; user: any }) {
-  const tempId = Date.now(); // id tạm thời cho pending message
-  const now = new Date().toISOString();
-
-  // 1. Emit tin nhắn pending cho chính sender
-//   const pendingMsg: any = {
-//     id: tempId,
-//     text: message.text,
-//     created_at: now,  // tạm coi created_at = thời gian client gửi
-//     updated_at: null,
-//     sender: {
-//       id: message.user.id,
-//       username: message.user.username,
-//       email: message.user.email,
-//     },
-//     isMine: true,
-//     // status: 'pending',
-//   };
-
-//   this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
-
-  try {
-    // 2. Lưu DB
-    const savedMsg = await this.gw.exec('chat', 'sendMessage', { ...message, send_at: now });
-
-    // 3. Emit bản tin chính thức
-    const msg: any= {
-      id: savedMsg.id,
-      text: savedMsg.text,
-      created_at: savedMsg.created_at,
-      updated_at: savedMsg.updated_at,
-      sender: {
-        id: savedMsg.sender.id || message.user.id,
-        username: savedMsg.sender.username || message.user.username,
-        email: savedMsg.sender.email || message.user.email,
-      },
-      isMine: savedMsg.sender.id === message.user.id,
-    //   status: 'delivered',
-    };
-
-    this.server.to(message.channelId).emit('receiveMessage', msg);
-
-    // 4. Tăng unread cho các user khác
-    await this.incrementUnread(message.channelId, message.user.id);
-  } catch (err) {
-    // 5. Emit lỗi cho sender
-    const failedMsg: any = {
+  async createChannel(data: { userIds: string[]; name: string; user: any; type?: string }) {
+   
+    const tempId = Date.now();
+    const now = new Date().toISOString();
+    const channel: any = {
       id: tempId,
-      text: message.text,
+      fakeID: tempId,
+      name: data?.name,
+      type: data?.type,
+      member_count: data?.userIds?.length + 1,
+      members:[],
+      isActive: true,
       created_at: now,
-      updated_at: null,
-      sender: {
-        id: message.user.id,
-        username: message.user.username,
-        email: message.user.email,
-      },
-      isMine: true,
-    //   status: 'failed',
+      updated_at: now,
+    };
+    if (data?.type !== 'personal') {
+      for (const uid of data.userIds) {
+        // lấy socketId từ Redis
+        const statusStr = await this.redis.hget('user_status', uid);
+        if (statusStr) {
+          const status = JSON.parse(statusStr);
+          if (status.online && status.socketId) {
+            this.server.to(status.socketId).emit('receiveChannel', channel);
+            console.log(`📢 Sent channel to user ${uid} at socket ${status.socketId}`);
+          }
+        }
+      }
+    }
+  
+   
+   try {
+  const savedChannel: any = await this.gw.exec('chat', 'createChannel', data);
+
+  if (savedChannel?.data) {
+    const msg: any = {
+      ...savedChannel.data,          // lấy toàn bộ dữ liệu DB
+      fakeID: channel.fakeID,   // giữ fakeID để map client
     };
 
-    this.server.to(message.channelId).emit('receiveMessage', failedMsg);
+    for (const uid of data.userIds) {
+      const statusStr = await this.redis.hget('user_status', uid);
+      if (statusStr) {
+        const status = JSON.parse(statusStr);
+        if (status.online && status.socketId) {
+          this.server.to(status.socketId).emit('receiveChannel', msg);
+          console.log(`📢 Sent channel to user ${uid} at socket ${status.socketId} with ${JSON.stringify(msg)}`);
+        }
+      }
+    }
+  }
+
+    
+
+  } catch (err) {
+    console.error(`❌ Error creating channel: ${err}`);
   }
 }
+
+  /** Send message */
+async sendMessageToChannel(message: { channelId: string; text: string; user: any; channelData?: any }) {
+  const tempId = Date.now(); 
+  const now = new Date().toISOString();
+
+  // Emit UI pending message
+  const pendingMsg: any = {
+    id: tempId,
+    text: message.text,
+    created_at: now,
+    updated_at: null,
+    sender: {
+      id: message.user.id,
+      username: message.user.username,
+      email: message.user.email,
+    },
+    isMine: true,
+  };
+  this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
+
+  // Nếu channel tồn tại và chưa active
+if (message.channelData && message.channelData.isActive === false) {
+  // Update lại channel thành active
+  const activeChannel = {
+    ...message.channelData,
+    isActive: true,
+  };
+
+  // Duyệt qua từng member trong channel
+  for (const member of message.channelData.members) {
+    const uid = member.id; // hoặc member.userId tuỳ DB
+    const statusStr = await this.redis.hget('user_status', uid);
+
+    if (statusStr) {
+      const status = JSON.parse(statusStr);
+      if (status.online && status.socketId) {
+        this.server.to(status.socketId).emit('receiveChannel', activeChannel);
+        console.log(`📢 Sent activeChannel to user ${uid} at socket ${status.socketId}`);
+      }
+    }
+  }
+}
+
+  try {
+    // Lưu DB
+    await this.gw.exec('chat', 'sendMessage', { ...message, send_at: now });
+    await this.incrementUnread(message.channelId, message.user.id);
+  } catch (err) {
+    // Nếu lỗi -> emit lại pendingMsg để client biết
+    this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
+  }
+}
+
 
 
 
