@@ -273,107 +273,200 @@ async sendMessage(user: any, data: { channelId: string; text: string; send_at: a
    * - order: 'ASC' | 'DESC' (mặc định 'ASC')
    * Trả về { items, total, page, pageSize, hasMore }
    */
-  async fetchHistory(
-    user: any,
-    channelId: string,
-    options?: {
-      page?: number;
-      pageSize?: number;
-      after?: string; // messageId cursor
-      since?: string | Date;
-      order?: 'ASC' | 'DESC';
-    },
-  ) {
-    const page = Math.max(1, options?.page ?? 1);
-    const pageSize = Math.min(200, Math.max(1, options?.pageSize ?? 50));
-    const order = options?.order ?? 'ASC';
+ // Gợi ý index để truy vấn nhanh:
+// CREATE INDEX IF NOT EXISTS ix_msg_channel_time_id ON message(channel_id, send_at DESC, id DESC);
 
-    // Kiểm tra user có trong channel không
-    const channel = await this.channelRepo
-      .createQueryBuilder('channel')
-      .leftJoinAndSelect('channel.owner', 'owner')
-      .leftJoinAndSelect('channel.users', 'member')
-      .leftJoin('channel.users', 'user')
-      .where('channel.id = :channelId', { channelId })
-      .andWhere('user.id = :userId', { userId: user.id })
-      .getOne();
-    if (!channel) {
-      throw new RpcException({ msg: 'Không tìm thấy kênh chat', status: 404 });
-    }
+async fetchHistory(
+  user: any,
+  channelId: string | number,
+  options?: {
+    pageSize?: number;           // mặc định 50
+    after?: string;              // messageId cursor: lấy MỚI HƠN anchor (dùng cho live catch-up)
+    before?: string;             // messageId cursor: lấy CŨ HƠN anchor (scroll lên: trang 2,3,...)
+    since?: string | Date;       // lọc từ thời điểm này trở đi (nếu cần)
+    latest?: boolean;            // chỉ lấy 1 tin mới nhất
+  },
+) {
+  const pageSize = Math.min(200, Math.max(1, options?.pageSize ?? 50));
 
-    // Query messages bằng queryBuilder
-    const msgQB = this.messageRepo
-      .createQueryBuilder('message')
-      .leftJoinAndSelect('message.sender', 'sender')
-      .where('message.channelId = :channelId', { channelId: channel.id });
+  // 1) Kiểm tra quyền truy cập kênh
+  const isMember = await this.channelRepo
+    .createQueryBuilder('c')
+    .innerJoin('c.users', 'u', 'u.id = :userId', { userId: user.id })
+    .where('c.id = :channelId', { channelId })
+    .getExists();
 
-    // Cursor after
-    if (options?.after) {
-      const afterMsg = await this.messageRepo.findOne({
-        where: { id: options.after },
-        select: ['created_at'],
-      });
-      if (afterMsg) {
-        msgQB.andWhere('message.created_at > :afterDate', { afterDate: afterMsg.created_at });
-      }
-    }
-
-    // Since
-    if (options?.since) {
-      const sinceDate = new Date(options.since);
-      if (!isNaN(sinceDate.getTime())) {
-        msgQB.andWhere('message.created_at >= :sinceDate', { sinceDate });
-      }
-    }
-
-    msgQB.orderBy('message.created_at', order)
-      .skip((page - 1) * pageSize)
-      .take(pageSize);
-
-    const [items, total] = await msgQB.getManyAndCount();
-
-    // Lấy danh sách user là member của kênh (chỉ lấy id, username, email)
-    const members = (channel.users || []).map(u => ({
-      id: u.id,
-      username: u.username,
-      email: u.email,
-      isMine: u.id === user.id,
-      isOwner: channel.owner && u.id === channel.owner.id,
-    })); 
-
-    // Trả về user_id và thông tin sender đã xử lý cho từng tin nhắn
-      const itemsWithUserId = items.map(msg => {
-        let senderInfo = undefined;
-        let isMine = false;
-        if (msg.sender) {
-          if (typeof msg.sender === 'object') {
-            senderInfo = this.remove_field_user({ ...msg.sender });
-            isMine = String(msg.sender.id) === String(user.id);
-          } else {
-            // Nếu sender là id, cần lấy thông tin user
-            const senderObj = (channel.users || []).find(u => String(u.id) === String(msg.sender));
-            senderInfo = senderObj ? this.remove_field_user({ ...senderObj }) : undefined;
-            isMine = String(msg.sender) === String(user.id);
-          }
-        }
-        return {
-          ...msg,
-          sender: senderInfo,
-          isMine,
-        };
-      });
-
-    const { users, ...channelInfo } = channel;
-    return {
-      channel: channelInfo,
-      members,
-      items: itemsWithUserId,
-      total,
-      page,
-      pageSize,
-      hasMore: page * pageSize < total,
-    };
+  if (!isMember) {
+    throw new RpcException({ msg: 'Không tìm thấy kênh chat hoặc bạn không có quyền', status: 404 });
   }
+
+  // 2) Lấy channel + owner + users (để build members/sender)
+  const channel = await this.channelRepo
+    .createQueryBuilder('channel')
+    .leftJoinAndSelect('channel.owner', 'owner')
+    .leftJoinAndSelect('channel.users', 'member')
+    .where('channel.id = :channelId', { channelId })
+    .getOne();
+
+  if (!channel) {
+    throw new RpcException({ msg: 'Không tìm thấy kênh chat', status: 404 });
+  }
+
+  // Helper: lấy anchor (id + send_at)
+  const getAnchor = async (id?: string) => {
+    if (!id) return undefined;
+    return this.messageRepo.findOne({
+      where: { id },
+      select: ['id', 'send_at'],
+    });
+  };
+
+  const anchorBefore = await getAnchor(options?.before);
+  const anchorAfter  = !options?.before ? await getAnchor(options?.after) : undefined;
+
+  // 3) Base QB
+  const baseQB = this.messageRepo
+    .createQueryBuilder('message')
+    .leftJoinAndSelect('message.sender', 'sender')
+    // nếu FK là snake_case thì đổi thành 'message.channel_id'
+    .where('message.channelId = :channelId', { channelId });
+
+  if (options?.since) {
+    const sinceDate = new Date(options.since);
+    if (!isNaN(sinceDate.getTime())) {
+      baseQB.andWhere('message.send_at >= :sinceDate', { sinceDate });
+    }
+  }
+
+  let rows: any[] = [];
+  let hasMoreOlder = false;
+  let hasMoreNewer = false;
+
+  if (options?.latest) {
+    // chỉ lấy 1 tin mới nhất
+    rows = await baseQB
+      .orderBy('message.send_at', 'DESC')
+      .addOrderBy('message.id', 'DESC')
+      .take(1)
+      .getMany();
+
+    // Trả về 1 phần tử, không đảo, nhưng để thống nhất UI (cũ→mới), ta đảo để newest là cuối cùng
+    rows = rows.reverse();
+  }
+  else if (anchorBefore) {
+    // TRANG CŨ HƠN (trang 2,3...) — lấy cũ hơn anchor, ORDER DESC để chọn đúng cửa sổ mới→cũ
+    const r = await baseQB
+      .andWhere(
+        `(message.send_at < :anchorTime)
+         OR (message.send_at = :anchorTime AND message.id < :anchorId)`,
+        { anchorTime: anchorBefore.send_at, anchorId: anchorBefore.id },
+      )
+      .orderBy('message.send_at', 'DESC')
+      .addOrderBy('message.id', 'DESC')
+      .take(pageSize + 1)
+      .getMany();
+
+    hasMoreOlder = r.length > pageSize;
+    rows = r.slice(0, pageSize);
+
+    // Quan trọng: đảo sang ASC (cũ→mới) để PHẦN TỬ CUỐI = MỚI NHẤT CỦA TRANG
+    rows = rows.reverse();
+
+    // Nếu còn phần tử thứ (pageSize+1) => vẫn còn cũ hơn
+    // hasMoreNewer ở nhánh này không cần set (cuộn xuống thường không dùng), nhưng có thể tính nếu muốn
+  }
+  else if (anchorAfter) {
+    // LẤY MỚI HƠN ANCHOR (bắt kịp hiện tại): ORDER ASC để ổn định, rồi giữ luôn ASC (cũ→mới)
+    const rAsc = await baseQB
+      .andWhere(
+        `(message.send_at > :anchorTime)
+         OR (message.send_at = :anchorTime AND message.id > :anchorId)`,
+        { anchorTime: anchorAfter.send_at, anchorId: anchorAfter.id },
+      )
+      .orderBy('message.send_at', 'ASC')
+      .addOrderBy('message.id', 'ASC')
+      .take(pageSize + 1)
+      .getMany();
+
+    hasMoreNewer = rAsc.length > pageSize;
+    rows = rAsc.slice(0, pageSize);
+
+    // Giữ nguyên ASC (cũ→mới) để phần tử cuối cùng là mới nhất của trang này
+  }
+  else {
+    // TRANG ĐẦU (initial): chọn 50 tin mới nhất theo DESC rồi đảo sang ASC để newest nằm CUỐI
+    const r = await baseQB
+      .orderBy('message.send_at', 'DESC')
+      .addOrderBy('message.id', 'DESC')
+      .take(pageSize + 1)
+      .getMany();
+
+    hasMoreOlder = r.length > pageSize;   // còn cũ hơn (để kéo trang 2)
+    rows = r.slice(0, pageSize).reverse(); // đảo sang ASC (cũ→mới)
+  }
+
+  // 4) Chuẩn hóa sender & flags
+  const items = rows.map(msg => {
+    let senderInfo: any = undefined;
+    let isMine = false;
+
+    if (msg.sender) {
+      if (typeof msg.sender === 'object') {
+        senderInfo = this.remove_field_user({ ...msg.sender });
+        isMine = String(msg.sender.id) === String(user.id);
+      } else {
+        const senderObj = (channel.users || []).find(u => String(u.id) === String(msg.sender));
+        senderInfo = senderObj ? this.remove_field_user({ ...senderObj }) : undefined;
+        isMine = String(msg.sender) === String(user.id);
+      }
+    }
+
+    return {
+      ...msg,
+      sender: senderInfo,
+      isMine,
+    };
+  });
+
+  // 5) Cursors (DANH SÁCH ĐANG Ở THỨ TỰ ASC: CŨ → MỚI)
+  const oldest = items[0];                         // phần tử đầu (cũ nhất của trang)
+  const newest = items[items.length - 1];          // phần tử cuối (mới nhất của trang) — đúng yêu cầu
+
+  // Scroll lên (trang cũ hơn): dùng 'before' = id của phần tử ĐẦU (oldest)
+  const nextBefore = oldest?.id ?? null;
+
+  // Bắt kịp hiện tại (nếu có trang mới hơn): dùng 'after' = id của phần tử CUỐI (newest)
+  const nextAfter  = newest?.id ?? null;
+
+  // 6) Members tối giản
+  const members = (channel.users || []).map(u => ({
+    id: u.id,
+    username: u.username,
+    email: u.email,
+    isMine: String(u.id) === String(user.id),
+    isOwner: channel.owner && String(u.id) === String(channel.owner.id),
+  }));
+
+  const { users, ...channelInfo } = channel;
+
+  return {
+    channel: channelInfo,
+    members,
+    items,                     // THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
+    total: null,
+    page: null,
+    pageSize,
+    hasMoreOlder,              // còn trang cũ hơn (để kéo tiếp 901→950, …)
+    hasMoreNewer,              // còn trang mới hơn (nếu dùng nhánh after)
+    cursors: {
+      before: nextBefore,      // truyền vào options.before để lấy CŨ HƠN
+      after:  nextAfter,       // truyền vào options.after  để lấy MỚI HƠN
+    },
+  };
+}
+
+
+
   async searchChatEntities(
     user: any,
     data: { key: string; type: 'user' | 'group' | 'group-private' | 'personal' | 'all'; limit: number },

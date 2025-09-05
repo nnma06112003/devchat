@@ -16,7 +16,7 @@ export class ChatController {
       case 'createChannel':
         return await this.chatService.createChannel(payload.data.user, payload.data);
       case 'listChannelsMessages':
-        return await this.chatService.fetchHistory(payload.data.user, payload.data.channel_id);
+        return await this.chatService.fetchHistory(payload.data.user, payload.data.channel_id, payload.data);
       case 'listChannels':
         return await this.chatService.listChannels(payload.data.user);
       case 'searchChatEntities':
