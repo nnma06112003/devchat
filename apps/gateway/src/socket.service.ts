@@ -197,6 +197,7 @@ async sendMessageToChannel(message: { channelId: string; text: string; user: any
   // Emit UI pending message
   const pendingMsg: any = {
     id: tempId,
+    fakeID: tempId,
     text: message.text,
     created_at: now,
     updated_at: null,
@@ -206,6 +207,7 @@ async sendMessageToChannel(message: { channelId: string; text: string; user: any
       email: message.user.email,
     },
     isMine: true,
+    status: 'pending',
   };
   this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
 
@@ -234,11 +236,25 @@ if (message.channelData && message.channelData.isActive === false) {
 
   try {
     // Lưu DB
-    await this.gw.exec('chat', 'sendMessage', { ...message, send_at: now });
+    const res:any = await this.gw.exec('chat', 'sendMessage', { ...message, send_at: now });
     await this.incrementUnread(message.channelId, message.user.id);
-  } catch (err) {
-    // Nếu lỗi -> emit lại pendingMsg để client biết
-    this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
+
+    if (res?.data) {
+      const { channel, ...datas }  = res.data;
+      // Emit tin nhắn thật cho channel
+      this.server.to(message.channelId).emit('receiveMessage', {
+        ...datas,
+        fakeID: tempId,
+        status: 'sent',
+      });
+    }
+  } catch (err:any) {
+    // Nếu lỗi -> emit lại pendingMsg với status 'error' cho client biết
+    this.server.to(message.channelId).emit('receiveMessage', {
+      ...pendingMsg,
+      status: 'error',
+      msg: err?.message || 'Gửi tin nhắn thất bại',
+    });
   }
 }
 
