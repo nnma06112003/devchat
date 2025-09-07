@@ -16,6 +16,8 @@ import { RpcException } from '@nestjs/microservices';
 import { User } from '@myorg/entities';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository, Not } from 'typeorm';
+import { MailerService } from '@nestjs-modules/mailer';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -26,8 +28,12 @@ export class AuthService {
     private readonly userRepo: Repository<User>,
     private userRepository: UserRepository,
     private jwtService: JwtService,
-  ) { }
-  async searchUsers(user:any,params: { key: string; limit?: number }): Promise<any[]> {
+    private readonly mailerService: MailerService,
+  ) {}
+  async searchUsers(
+    user: any,
+    params: { key: string; limit?: number },
+  ): Promise<any[]> {
     const key = (params.key || '').trim();
     const limit = params.limit ?? 10;
     if (!key || !user || !user.id) return [];
@@ -147,6 +153,15 @@ export class AuthService {
       password: hashedPassword,
     });
 
+    //generate verification token, save to user
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.verification_token = verificationToken;
+    user.email_verified = false;
+    await this.userRepository.save(user);
+
+    //send verification email
+    this.sendVerificationEmail(user.email);
+
     const payload: any = {
       sub: user.id,
       email: user.email,
@@ -160,11 +175,48 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        username: user.username,
         role: user.role,
       },
     };
+  }
+
+  async confirmEmail(token: string): Promise<any> {
+    const user: any = await this.userRepository.findByVerificationToken(token);
+    if (!user) {
+      throw new RpcException({
+        msg: 'Token xác nhận không hợp lệ',
+        status: 400,
+      });
+    }
+    user.email_verified = true;
+    user.verification_token = null;
+    await this.userRepository.save(user);
+    return;
+  }
+
+  async sendVerificationEmail(email: string): Promise<any> {
+    const user: any = await this.userRepository.findByEmail(email);
+    if (!user)
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    if (user.email_verified)
+      return { status: 200, msg: 'Email đã được xác thực' };
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.verification_token = verificationToken;
+    await this.userRepository.save(user);
+
+    const frontendConfirmUrl = `${process.env.FE_URL}/auth/confirm-email?token=${verificationToken}&email=${user.email}`;
+    await this.mailerService.sendMail({
+      to: user.email,
+      subject: 'Xác nhận email của bạn',
+      template: 'confirmation', // dùng tên template (không để './')
+      context: { name: user.username || 'User', url: frontendConfirmUrl },
+      text: `Xin chào ${user.username || 'User'}, xác nhận email: ${frontendConfirmUrl}`,
+      html: `<p>Xin chào ${user.username || 'User'},</p><p><a href="${frontendConfirmUrl}">Xác nhận email</a></p>`,
+    });
+
+    return { status: 200, msg: 'Đã gửi lại email xác thực' };
   }
 
   async login(loginDto: LoginDto): Promise<any> {

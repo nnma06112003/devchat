@@ -14,7 +14,10 @@ export class UserRepository {
   async findByEmail(email: string): Promise<User | null> {
     return this.repository.findOne({ where: { email } });
   }
-async findByProvider(provider: string, provider_id: string): Promise<User | null> {
+  async findByProvider(
+    provider: string,
+    provider_id: string,
+  ): Promise<User | null> {
     return this.repository.findOne({ where: { provider, provider_id } });
   }
   async findById(id: string): Promise<User | null> {
@@ -43,5 +46,9 @@ async findByProvider(provider: string, provider_id: string): Promise<User | null
 
   async findByRole(role: UserRole): Promise<User[]> {
     return this.repository.find({ where: { role } });
+  }
+
+  async findByVerificationToken(token: string): Promise<User | null> {
+    return this.repository.findOne({ where: { verification_token: token } });
   }
 }

@@ -24,6 +24,10 @@ export class AuthController {
         return this.authService.loginGithubOAuth(data);
       case 'searchUsers':
         return this.authService.searchUsers(data.user, data.data);
+      case 'confirm_email':
+        return this.authService.confirmEmail(data.token);
+      // case 'resend_verification':
+      //   return this.authService.resendVerificationEmail(data.email);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }

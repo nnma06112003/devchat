@@ -20,10 +20,7 @@ export class RegisterDto {
   password: string;
 
   @IsString()
-  firstName: string;
-
-  @IsString()
-  lastName: string;
+  username: string;
 
   @IsOptional()
   @IsEnum(UserRole)

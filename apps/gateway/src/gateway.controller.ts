@@ -58,6 +58,11 @@ export class GatewayController {
     return this.gw.exec('auth', 'verify_token', dto);
   }
 
+  @Get('auth/confirm-email')
+  async confirmEmail(@Query() dto: { token: string }) {
+    return this.gw.exec('auth', 'confirm_email', dto);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('channels/join-channel')
   async joinChannel(@Body() dto: any, @Req() req: Request) {
@@ -106,8 +111,6 @@ export class GatewayController {
       ...q,
     });
   }
-
-
 
   @UseGuards(JwtAuthGuard)
   @Get('users/list-online')

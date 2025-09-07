@@ -43,4 +43,10 @@ export class User {
 
   @ManyToMany(() => Channel, (channel) => channel.users)
   channels: Channel[];
+
+  @Column({ nullable: true })
+  verification_token: string;
+
+  @Column({ default: false })
+  email_verified: boolean;
 }

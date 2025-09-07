@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import {  ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -10,9 +10,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from '@myorg/entities';
 import { GithubStrategy } from './strategies/github.strategy';
 import { DatabaseModule } from '@myorg/database';
+import { MailerModule } from '@nestjs-modules/mailer';
+import { Transport } from '@nestjs/microservices';
 
 @Module({
-  imports: [ 
+  imports: [
     DatabaseModule,
     TypeOrmModule.forFeature([User]),
     PassportModule,
@@ -21,6 +23,25 @@ import { DatabaseModule } from '@myorg/database';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get('JWT_SECRET'),
         signOptions: { expiresIn: '24h' },
+      }),
+    }),
+
+    //Mailer
+    MailerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        transport: {
+          host: config.get('SMTP_HOST'),
+          port: config.get<number>('SMTP_PORT'),
+          secure: config.get('SMTP_SECURE') === 'true',
+          auth: {
+            user: config.get('SMTP_USER'),
+            pass: config.get('SMTP_PASS'),
+          },
+        },
+        defaults: {
+          from: config.get('SMTP_USER') || 'no-reply@example.com',
+        },
       }),
     }),
   ],
