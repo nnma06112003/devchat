@@ -1,117 +1,98 @@
+// socket.service.ts
 import { Injectable, Inject } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import Redis from 'ioredis';
 import { GatewayService } from './gateway.service';
-import { text } from 'stream/consumers';
 import { Message } from '@myorg/entities';
 
 export type AuthSocket = Socket & { user?: { id: string } };
 
-
 @Injectable()
 export class ChatSocketService {
   private server: Server;
-
-    constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis,private readonly gw: GatewayService) { }
-
+  constructor(
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    private readonly gw: GatewayService,
+  ) {}
 
   setServer(server: Server) {
     this.server = server;
   }
 
-  /** User online */
-async markUserOnline(userId: string, socketId: string) {
-  if (!userId) return;
+  /* ===================== UNREAD HELPERS ===================== */
+  private unreadKey = (userId: string) => `unread:${userId}`;
+  private subKey = (socketId: string) => `unread_subscribe:${socketId}`;
 
-  // Cập nhật Redis
-  await this.redis.hset(
-    "user_status",
-    userId,
-    JSON.stringify({
-      online: true,
-      lastSeen: Date.now(),
-      socketId,
-    })
-  );
-
-  // Lấy toàn bộ user_status từ Redis
-  const all = await this.redis.hgetall("user_status");
-
-  // Lọc ra những user đang online
-  const onlineUsers: string[] = [];
-  for (const [uid, data] of Object.entries(all)) {
-    try {
-      const status = JSON.parse(data);
-      if (status.online) {
-        onlineUsers.push(uid);
-      }
-    } catch (err) {
-      console.error("❌ Parse user_status lỗi", uid, err);
+  /** Lấy toàn bộ unread cho user (unify) */
+  async getUnreadMap(userId: string): Promise<Record<string, number>> {
+    const data = await this.redis.hgetall(this.unreadKey(userId));
+    const result: Record<string, number> = {};
+    for (const [channelId, count] of Object.entries(data)) {
+      result[channelId] = parseInt(count, 10) || 0;
     }
+    return result;
   }
 
-  console.log(`🟢 User online: ${userId} - socket ${socketId}`);
-  console.log(`📢 Online list: ${onlineUsers.join(", ")}`);
-
-  // Emit danh sách online đầy đủ
-  this.server.emit("presenceUpdate", {
-    online: onlineUsers,
-    offline: [],
-  });
-}
-
-
-
-  /** User offline */
-async markUserOffline(userId: string) {
-  if (!userId) return;
-
-  const lastSeen = Date.now();
-
-  // Cập nhật trạng thái offline vào Redis
-  await this.redis.hset(
-    "user_status",
-    userId,
-    JSON.stringify({
-      online: false,
-      lastSeen,
-    })
-  );
-
-  // Lấy toàn bộ user_status từ Redis
-  const all = await this.redis.hgetall("user_status");
-
-  // Lọc ra user đang online
-  const onlineUsers: string[] = [];
-  for (const [uid, data] of Object.entries(all)) {
-    try {
-      const status = JSON.parse(data);
-      if (status.online) {
-        onlineUsers.push(uid);
-      }
-    } catch (err) {
-      console.error("❌ Parse user_status lỗi", uid, err);
-    }
+  /** Đăng ký danh sách kênh muốn nhận thông báo unread cho socketId */
+  async registerUnreadChannels(socketId: string, channelIds: string[]) {
+    await this.redis.set(this.subKey(socketId), JSON.stringify(channelIds || []));
   }
 
-  console.log(`🔴 User offline: ${userId}`);
-  console.log(`📢 Online list: ${onlineUsers.join(", ")}`);
+  /** Lấy danh sách kênh đã đăng ký nhận thông báo unread cho socketId */
+  async getRegisteredUnreadChannels(socketId: string): Promise<string[]> {
+    const data = await this.redis.get(this.subKey(socketId));
+    return data ? JSON.parse(data) : [];
+  }
 
-  // Emit: danh sách online hiện tại + user vừa offline
-  this.server.emit("presenceUpdate", {
-    online: onlineUsers,
-    offline: [{ userId, lastSeen }],
-  });
-}
+  /* ===================== PRESENCE ===================== */
+  async markUserOnline(userId: string, socketId: string) {
+    await this.redis.hset(
+      'user_status',
+      userId,
+      JSON.stringify({ online: true, lastSeen: Date.now(), socketId }),
+    );
 
+    // Emit presence (giữ nguyên log/format bạn đang dùng)
+    const all = await this.redis.hgetall('user_status');
+    const onlineUsers: string[] = [];
+    for (const [uid, data] of Object.entries(all)) {
+      try {
+        const status = JSON.parse(data);
+        if (status.online) onlineUsers.push(uid);
+      } catch (err) {
+        console.error('❌ Parse user_status lỗi', uid, err);
+      }
+    }
+    this.server.emit('presenceUpdate', { online: onlineUsers, offline: [] });
+  }
 
-  /** Lấy trạng thái 1 user */
+  async markUserOffline(userId: string) {
+    const lastSeen = Date.now();
+    await this.redis.hset(
+      'user_status',
+      userId,
+      JSON.stringify({ online: false, lastSeen }),
+    );
+
+    const all = await this.redis.hgetall('user_status');
+    const onlineUsers: string[] = [];
+    for (const [uid, data] of Object.entries(all)) {
+      try {
+        const status = JSON.parse(data);
+        if (status.online) onlineUsers.push(uid);
+      } catch (err) {
+        console.error('❌ Parse user_status lỗi', uid, err);
+      }
+    }
+    this.server.emit('presenceUpdate', { online: onlineUsers, offline: [{ userId, lastSeen }] });
+  }
+
   async getUserStatus(userId: string) {
     const data = await this.redis.hget('user_status', userId);
     return data ? JSON.parse(data) : { online: false, lastSeen: null };
   }
 
-  /** Join channel */
+  /* ===================== ROOM OPS ===================== */
   async joinChannel(client: AuthSocket, channelId: string) {
     client.join(channelId);
     await this.resetUnread(client, channelId);
@@ -119,20 +100,18 @@ async markUserOffline(userId: string) {
     console.log(`✅ User ${client.user?.id} joined channel ${channelId}`);
   }
 
-  /** Leave channel */
   leaveChannel(client: AuthSocket, channelId: string) {
     client.leave(channelId);
     console.log(`🚪 User ${client.user?.id} left channel ${channelId}`);
   }
 
-  /** Switch channel */
   async switchChannel(client: AuthSocket, oldChannelId: string, newChannelId: string) {
     this.leaveChannel(client, oldChannelId);
     await this.joinChannel(client, newChannelId);
-  } 
+  }
 
+  /* ===================== CHANNEL & MESSAGE ===================== */
   async createChannel(data: { userIds: string[]; name: string; user: any; type?: string }) {
-   
     const tempId = Date.now();
     const now = new Date().toISOString();
     const channel: any = {
@@ -140,159 +119,131 @@ async markUserOffline(userId: string) {
       fakeID: tempId,
       name: data?.name,
       type: data?.type,
-      member_count: data?.userIds?.length + 1,
-      members:[],
+      member_count: (data?.userIds?.length ?? 0) + 1,
+      members: [],
       isActive: true,
       created_at: now,
       updated_at: now,
     };
+
     if (data?.type !== 'personal') {
       for (const uid of data.userIds) {
-        // lấy socketId từ Redis
         const statusStr = await this.redis.hget('user_status', uid);
-        if (statusStr) {
+        if (!statusStr) continue;
+        const status = JSON.parse(statusStr);
+        if (status.online && status.socketId) {
+          this.server.to(status.socketId).emit('receiveChannel', channel);
+          console.log(`📢 Sent channel to user ${uid} at socket ${status.socketId}`);
+        }
+      }
+    }
+
+    try {
+      const savedChannel: any = await this.gw.exec('chat', 'createChannel', data);
+      if (savedChannel?.data) {
+        const msg: any = { ...savedChannel.data, fakeID: channel.fakeID };
+        for (const uid of data.userIds) {
+          const statusStr = await this.redis.hget('user_status', uid);
+          if (!statusStr) continue;
           const status = JSON.parse(statusStr);
           if (status.online && status.socketId) {
-            this.server.to(status.socketId).emit('receiveChannel', channel);
-            console.log(`📢 Sent channel to user ${uid} at socket ${status.socketId}`);
+            this.server.to(status.socketId).emit('receiveChannel', msg);
+            console.log(`📢 Sent channel to user ${uid} at socket ${status.socketId} with ${JSON.stringify(msg)}`);
           }
         }
       }
+    } catch (err) {
+      console.error(`❌ Error creating channel: ${err}`);
     }
-  
-   
-   try {
-  const savedChannel: any = await this.gw.exec('chat', 'createChannel', data);
+  }
 
-  if (savedChannel?.data) {
-    const msg: any = {
-      ...savedChannel.data,          // lấy toàn bộ dữ liệu DB
-      fakeID: channel.fakeID,   // giữ fakeID để map client
+  async sendMessageToChannel(message: { channelId: string; text: string; user: any; channelData?: any }) {
+    const tempId = Date.now();
+    const now = new Date().toISOString();
+
+    // Emit pending vào room
+    const pendingMsg: any = {
+      id: tempId,
+      fakeID: tempId,
+      text: message.text,
+      created_at: now,
+      updated_at: null,
+      sender: {
+        id: message.user.id,
+        username: message.user.username,
+        email: message.user.email,
+      },
+      isMine: true,
+      status: 'pending',
     };
+    this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
 
-    for (const uid of data.userIds) {
-      const statusStr = await this.redis.hget('user_status', uid);
-      if (statusStr) {
+    // Nếu channel chưa active → bật active & gửi cập nhật channel cho members đang online
+    if (message.channelData && message.channelData.isActive === false) {
+      const activeChannel = { ...message.channelData, isActive: true };
+      for (const member of message.channelData.members || []) {
+        const uid = member.id;
+        const statusStr = await this.redis.hget('user_status', uid);
+        if (!statusStr) continue;
         const status = JSON.parse(statusStr);
         if (status.online && status.socketId) {
-          this.server.to(status.socketId).emit('receiveChannel', msg);
-          console.log(`📢 Sent channel to user ${uid} at socket ${status.socketId} with ${JSON.stringify(msg)}`);
+          this.server.to(status.socketId).emit('receiveChannel', activeChannel);
+          console.log(`📢 Sent activeChannel to user ${uid} at socket ${status.socketId}`);
         }
       }
     }
-  }
 
-    
+    try {
+      const res: any = await this.gw.exec('chat', 'sendMessage', { ...message, send_at: now });
 
-  } catch (err) {
-    console.error(`❌ Error creating channel: ${err}`);
-  }
-}
+      // ✅ Tăng unread CHO NGƯỜI KHÁC (không phải sender) – chỉ khi họ đã subscribe & không ở trong room
+      await this.incrementUnread(String(message.channelId), String(message.user.id));
 
-  /** Send message */
-async sendMessageToChannel(message: { channelId: string; text: string; user: any; channelData?: any }) {
-  const tempId = Date.now(); 
-  const now = new Date().toISOString();
-
-  // Emit UI pending message
-  const pendingMsg: any = {
-    id: tempId,
-    fakeID: tempId,
-    text: message.text,
-    created_at: now,
-    updated_at: null,
-    sender: {
-      id: message.user.id,
-      username: message.user.username,
-      email: message.user.email,
-    },
-    isMine: true,
-    status: 'pending',
-  };
-  this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
-
-  // Nếu channel tồn tại và chưa active
-if (message.channelData && message.channelData.isActive === false) {
-  // Update lại channel thành active
-  const activeChannel = {
-    ...message.channelData,
-    isActive: true,
-  };
-
-  // Duyệt qua từng member trong channel
-  for (const member of message.channelData.members) {
-    const uid = member.id; // hoặc member.userId tuỳ DB
-    const statusStr = await this.redis.hget('user_status', uid);
-
-    if (statusStr) {
-      const status = JSON.parse(statusStr);
-      if (status.online && status.socketId) {
-        this.server.to(status.socketId).emit('receiveChannel', activeChannel);
-        console.log(`📢 Sent activeChannel to user ${uid} at socket ${status.socketId}`);
+      if (res?.data) {
+        const { channel, ...datas } = res.data;
+        this.server.to(message.channelId).emit('receiveMessage', {
+          ...datas,
+          fakeID: tempId,
+          status: 'sent',
+        });
       }
-    }
-  }
-}
-
-  try {
-    // Lưu DB
-    const res:any = await this.gw.exec('chat', 'sendMessage', { ...message, send_at: now });
-    await this.incrementUnread(message.channelId, message.user.id);
-
-    if (res?.data) {
-      const { channel, ...datas }  = res.data;
-      // Emit tin nhắn thật cho channel
+    } catch (err: any) {
       this.server.to(message.channelId).emit('receiveMessage', {
-        ...datas,
-        fakeID: tempId,
-        status: 'sent',
+        ...pendingMsg,
+        status: 'error',
+        msg: err?.message || 'Gửi tin nhắn thất bại',
       });
     }
-  } catch (err:any) {
-    // Nếu lỗi -> emit lại pendingMsg với status 'error' cho client biết
-    this.server.to(message.channelId).emit('receiveMessage', {
-      ...pendingMsg,
-      status: 'error',
-      msg: err?.message || 'Gửi tin nhắn thất bại',
-    });
   }
-}
 
-
-
-
-  /** Tăng unread */
+  /* ===================== UNREAD CORE ===================== */
   private async incrementUnread(channelId: string, senderId: string) {
-    const sockets: any[] = await this.server.in(channelId).fetchSockets();
-
+    const sockets: any[] = await this.server.fetchSockets(); // tất cả socket đang online
     for (const socket of sockets) {
+      const socketId = socket.id;
       const userId = socket.user?.id || socket.data?.user?.id;
-      if (userId && userId !== senderId) {
-        const key = `unread:${userId}`;
-        const count = await this.redis.hincrby(key, channelId, 1);
-        socket.emit('unreadCount', { channelId, count });
+      if (!userId || String(userId) === String(senderId)) continue;
+
+      // socket này có đăng ký theo dõi unread cho channelId không?
+      const registeredChannels = await this.getRegisteredUnreadChannels(socketId);
+      const isReg = registeredChannels.includes(String(channelId));
+
+      // socket này có ở trong room channelId không?
+      const isInChannel = socket.rooms.has(String(channelId));
+
+      if (isReg && !isInChannel) {
+        const key = this.unreadKey(String(userId));
+        const count = await this.redis.hincrby(key, String(channelId), 1);
+        socket.emit('unreadCount', { channelId: String(channelId), count });
       }
     }
   }
 
-  /** Reset unread */
   private async resetUnread(client: AuthSocket, channelId: string) {
     const userId = client.user?.id || client.data?.user?.id;
     if (!userId) return;
-
-    const key = `unread:${userId}`;
-    await this.redis.hset(key, channelId, 0);
-    client.emit('unreadCount', { channelId, count: 0 });
-  }
-
-  /** Lấy toàn bộ unread */
-  async getUnreadMap(userId: string): Promise<Record<string, number>> {
-    const key = `unread:${userId}`;
-    const data = await this.redis.hgetall(key);
-    const result: Record<string, number> = {};
-    for (const [channelId, count] of Object.entries(data)) {
-      result[channelId] = parseInt(count, 10);
-    }
-    return result;
+    const key = this.unreadKey(String(userId));
+    await this.redis.hset(key, String(channelId), 0);
+    client.emit('unreadCount', { channelId: String(channelId), count: 0 });
   }
 }
