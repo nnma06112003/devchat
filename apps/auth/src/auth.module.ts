@@ -12,6 +12,9 @@ import { GithubStrategy } from './strategies/github.strategy';
 import { DatabaseModule } from '@myorg/database';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { Transport } from '@nestjs/microservices';
+import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
+import { strict } from 'assert';
+import path from 'path';
 
 @Module({
   imports: [
@@ -41,6 +44,13 @@ import { Transport } from '@nestjs/microservices';
         },
         defaults: {
           from: config.get('SMTP_USER') || 'no-reply@example.com',
+        },
+        template: {
+          dir: path.join(process.cwd(), 'apps', 'auth', 'src', 'templates'),
+          adapter: new HandlebarsAdapter(),
+          options: {
+            strict: true,
+          },
         },
       }),
     }),

@@ -212,8 +212,8 @@ export class AuthService {
       subject: 'Xác nhận email của bạn',
       template: 'confirmation', // dùng tên template (không để './')
       context: { name: user.username || 'User', url: frontendConfirmUrl },
-      text: `Xin chào ${user.username || 'User'}, xác nhận email: ${frontendConfirmUrl}`,
-      html: `<p>Xin chào ${user.username || 'User'},</p><p><a href="${frontendConfirmUrl}">Xác nhận email</a></p>`,
+      // text: `Xin chào ${user.username || 'User'}, xác nhận email: ${frontendConfirmUrl}`,
+      // html: `<p>Xin chào ${user.username || 'User'},</p><p><a href="${frontendConfirmUrl}">Xác nhận email</a></p>`,
     });
 
     return { status: 200, msg: 'Đã gửi lại email xác thực' };
@@ -221,6 +221,14 @@ export class AuthService {
 
   async login(loginDto: LoginDto): Promise<any> {
     const user: any = await this.userRepository.findByEmail(loginDto.email);
+
+    if (!user.email_verified) {
+      throw new RpcException({
+        msg: 'Vui lòng xác thực email trước khi đăng nhập',
+        status: 401,
+      });
+    }
+
     if (!user) {
       throw new RpcException({
         msg: 'Tài khoản hoặc mật khẩu không đúng',

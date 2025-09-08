@@ -21,6 +21,7 @@ export class UserSeeder {
       email: 'admin@example.com',
       password: defaultPassword,
       role: 'admin',
+      email_verified: true,
     });
 
     // 5 user thường
@@ -30,7 +31,8 @@ export class UserSeeder {
         email: `user${i + 1}@example.com`,
         password: defaultPassword,
         role: 'user',
-      })
+        email_verified: true,
+      }),
     );
 
     await repo.save([admin, ...users]);
