@@ -103,8 +103,36 @@ export class AuthService {
       githubProfile.id,
     );
 
+    // Nếu chưa có user bằng provider github, thử tìm theo email và link account nếu cần
+    if (!user && githubProfile.email) {
+      const existingByEmail = await this.userRepository.findByEmail(
+        githubProfile.email,
+      );
+
+      if (existingByEmail) {
+        const conllision = await this.userRepository.findByProvider(
+          'github',
+          githubProfile.id,
+        );
+
+        if (conllision && conllision.id !== existingByEmail.id) {
+          throw new RpcException({
+            msg: 'Tài khoản GitHub này đã được liên kết với một tài khoản khác',
+            status: 409,
+          });
+        }
+        // Link với account của devchat
+        existingByEmail.provider = 'github';
+        existingByEmail.provider_id = githubProfile.id;
+        // existingByEmail.avatar = githubProfile.avatar || existingByEmail.avatar;
+        existingByEmail.email_verified = true;
+        await this.userRepository.save(existingByEmail);
+        user = existingByEmail;
+      }
+    }
+
+    // Nếu chưa có thì tạo mới user
     if (!user) {
-      // Nếu chưa có thì tạo mới user
       user = await this.userRepository.create({
         email: githubProfile.email,
         username: githubProfile.username,
@@ -124,9 +152,12 @@ export class AuthService {
 
     const access_token = this.jwtService.sign(payload);
 
+    const refresh_token = await this.generateAndSaverefresh_token(user);
+
     // 5. Trả về FE
     return {
       access_token,
+      refresh_token,
       user: {
         id: user.id,
         email: user.email,
@@ -143,6 +174,12 @@ export class AuthService {
       registerDto.email,
     );
     if (existingUser) {
+      if (existingUser.provider === 'github') {
+        throw new RpcException({
+          msg: 'Tài khoản đã tồn tại dưới dạng đăng nhập bằng GitHub. Vui lòng đăng nhập bằng GitHub hoặc dùng chức năng "Thiết lập mật khẩu" để liên kết.',
+          status: 409,
+        });
+      }
       throw new RpcException({ msg: 'Email đã tồn tại', status: 409 });
     }
 
