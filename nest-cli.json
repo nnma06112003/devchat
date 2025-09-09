@@ -29,6 +29,15 @@
         "tsConfigPath": "apps/gateway/tsconfig.app.json"
       }
     },
+    "upload": {
+      "type": "application",
+      "root": "apps/upload",
+      "sourceRoot": "apps/upload/src",
+      "entryFile": "main",
+      "compilerOptions": {
+        "tsConfigPath": "apps/upload/tsconfig.app.json"
+      }
+    },
     "entities": {
       "type": "library",
       "root": "libs/entities",

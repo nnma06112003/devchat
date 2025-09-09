@@ -9,7 +9,7 @@ import { ChatGateway } from './chat.gateway';
 import { ChatSocketService } from './socket.service';
 import { RedisProvider } from './redis/redis.provider';
 
-const SERVICES = ['auth', 'chat']; // mở rộng dễ dàng: search, file, notification...
+const SERVICES = ['auth', 'chat','upload']; // mở rộng dễ dàng: search, file, notification...
 const TOPICS = SERVICES.map(s => `svc.${s}.exec`);
 
 @Module({
