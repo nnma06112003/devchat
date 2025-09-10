@@ -1,75 +1,40 @@
+// apps/gateway/src/upload/upload.service.ts
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
-import { Message, User } from '@myorg/entities';
-import { Channel } from '@myorg/entities';
-import { BaseService } from '@myorg/common';
-import { RpcException } from '@nestjs/microservices';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
-export class UploadService extends BaseService<Message | Channel> {
-  /**
-   * Tham gia kênh Upload
-   * @param user user hiện tại
-   * @param data { id: string, type: 'group' | 'personal' }
-   */
-  
-  constructor(
-    @InjectRepository(Message)
-    private readonly messageRepo: Repository<Message>,
-    @InjectRepository(Channel)
-    private readonly channelRepo: Repository<Channel>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
-  ) {
-    super(messageRepo);
-  }
+export class UploadService {
+  private s3: S3Client;
+  private bucket = process.env.CF_BUCKET!;
 
-
- 
-
-  // Gửi tin nhắn vào channel
-async uploadFile(user: any, data: { channelId: string; text: string; send_at: any }) {
-  const channel = await this.check_exist_with_data(
-    Channel,
-    { id: data.channelId },
-    'Kênh Upload không tồn tại',
-  );
-  const sender = await this.check_exist_with_data(User, { id: user.id }, 'Người gửi không tồn tại');
-  if (!channel) throw new RpcException({ msg: 'Kênh Upload không tồn tại', status: 404 });
-  
-  const message = this.messageRepo.create({
-    ...data,
-    channel,
-    sender,
-    send_at: data.send_at,
-  });
-  await this.messageRepo.save(message);
-  const msgCount = await this.messageRepo.count({ where: { channel: { id: channel.id } } });
-
-  // Đếm số message trong channel
-
-  if (msgCount === 1) {
-    // Đây là message đầu tiên trong channel
-    return {
-      ...message,
-      channel: {
-        id: channel.id,
-        type: channel.type,
-        member_count: channel.member_count,
-        members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
-        created_at: channel.created_at,
-        updated_at: channel.updated_at,
-        isActive: true,
+  constructor() {
+    this.s3 = new S3Client({
+      region: 'auto', // Cloudflare R2 không cần region thật
+      endpoint: process.env.CF_ENDPOINT, // ví dụ: https://<accountid>.r2.cloudflarestorage.com
+      credentials: {
+        accessKeyId: process.env.CF_ACCESS_KEY!,
+        secretAccessKey: process.env.CF_SECRET_KEY!,
       },
-    };
+    });
   }
 
-  // Nếu không phải message đầu tiên → chỉ trả về message
-  return message;
-}
+  async getPresignedUrl(filename: string, contentType: string, userId: string) {
+    const key = `uploads/${userId}/${Date.now()}-${filename}`;
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+    });
+
+    const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn: 60 }); // 60 giây
+
+    const fileUrl = `${process.env.CDN_URL}/${key}`; // link public qua CDN
+
+    return { uploadUrl, fileUrl, key };
+  }
 
 
-
-
+  
 }

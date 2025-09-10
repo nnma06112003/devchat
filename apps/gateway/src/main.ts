@@ -25,7 +25,6 @@ async function bootstrap() {
 
   // ⚡ cấu hình Socket.IO adapter có xác thực JWT
   app.useWebSocketAdapter(new AuthenticatedSocketIoAdapter(app));
-
   const port = 3088;
   await app.listen(port);
   console.log(`🚀 Gateway running at http://localhost:${port}`);

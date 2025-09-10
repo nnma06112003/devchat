@@ -12,7 +12,11 @@ export class UploadController {
   async handleUploadMessage(@Payload() payload: any) {
     switch (payload.cmd) {
       case 'uploadFile':
-        return await this.UploadService.uploadFile(payload.data.user, payload.data);
+        return await this.UploadService.getPresignedUrl(
+          payload.data.filename,
+          payload.data.contentType,
+          payload.data.userId,
+        );
       default:
         return { error: 'Unknown command' };
     }

@@ -29,6 +29,8 @@
     "db:seed": "ts-node -r tsconfig-paths/register libs/database/src/seeds/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.884.0",
+    "@aws-sdk/s3-request-presigner": "^3.884.0",
     "@nestjs-modules/mailer": "^2.0.2",
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^3.2.2",

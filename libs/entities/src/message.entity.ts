@@ -5,19 +5,19 @@ import {
   Column,
   CreateDateColumn,
   ManyToOne,
-  PrimaryColumn,
+  OneToMany,
   UpdateDateColumn,
 } from 'typeorm';
 import { Channel } from './channel.entity';
 import { User } from './user.entity';
+import { Attachment } from './attachment.entity';
 
 @Entity('messages')
 export class Message {
-  
   @PrimaryGeneratedColumn()
   id: number | string;
 
-  @Column('text')
+  @Column('text', { nullable: true })
   text: string;
 
   @ManyToOne(() => Channel, (channel) => channel.messages, {
@@ -28,6 +28,9 @@ export class Message {
   @ManyToOne(() => User, { nullable: false, onDelete: 'SET NULL' })
   sender: User;
 
+  @OneToMany(() => Attachment, (a) => a.message, { cascade: true })
+  attachments: Attachment[];
+
   @Column({ type: 'timestamp', nullable: true })
   send_at?: Date;
 
@@ -35,5 +38,5 @@ export class Message {
   created_at: Date;
 
   @UpdateDateColumn()
-    updated_at: Date;
+  updated_at: Date;
 }
