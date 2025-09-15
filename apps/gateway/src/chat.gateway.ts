@@ -14,7 +14,9 @@ import { ChatSocketService } from './socket.service';
 export type AuthSocket = Socket & { user?: { id: string } };
 
 @WebSocketGateway({ cors: true })
-export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   constructor(private readonly chatSocketService: ChatSocketService) {}
 
   afterInit(server: Server) {
@@ -52,23 +54,38 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     @MessageBody() data: { channelIds: string[] },
     @ConnectedSocket() client: AuthSocket,
   ) {
-    await this.chatSocketService.registerUnreadChannels(client.id, data.channelIds || []);
-    console.log(`🔔 Socket ${client.id} đăng ký nhận unread cho kênh:`, data.channelIds);
+    await this.chatSocketService.registerUnreadChannels(
+      client.id,
+      data.channelIds || [],
+    );
+    console.log(
+      `🔔 Socket ${client.id} đăng ký nhận unread cho kênh:`,
+      data.channelIds,
+    );
   }
 
   @SubscribeMessage('join_channel')
-  async handleJoinChannel(@MessageBody() data: { channelId: string }, @ConnectedSocket() client: AuthSocket) {
+  async handleJoinChannel(
+    @MessageBody() data: { channelId: string },
+    @ConnectedSocket() client: AuthSocket,
+  ) {
     await this.chatSocketService.joinChannel(client, data.channelId);
   }
 
   @SubscribeMessage('create_channel')
-  async handleCreateChannel(@MessageBody() data: any, @ConnectedSocket() client: AuthSocket) {
+  async handleCreateChannel(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: AuthSocket,
+  ) {
     const message = { user: client?.user, ...data };
     await this.chatSocketService.createChannel(message);
   }
 
   @SubscribeMessage('leave_channel')
-  handleLeaveChannel(@MessageBody() data: { channelId: string }, @ConnectedSocket() client: AuthSocket) {
+  handleLeaveChannel(
+    @MessageBody() data: { channelId: string },
+    @ConnectedSocket() client: AuthSocket,
+  ) {
     this.chatSocketService.leaveChannel(client, data.channelId);
   }
 
@@ -77,11 +94,18 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     @MessageBody() data: { oldChannelId: string; newChannelId: string },
     @ConnectedSocket() client: AuthSocket,
   ) {
-    await this.chatSocketService.switchChannel(client, data.oldChannelId, data.newChannelId);
+    await this.chatSocketService.switchChannel(
+      client,
+      data.oldChannelId,
+      data.newChannelId,
+    );
   }
 
   @SubscribeMessage('send_message')
-  async handleSendMessage(@MessageBody() data: any, @ConnectedSocket() client: AuthSocket) {
+  async handleSendMessage(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: AuthSocket,
+  ) {
     const message = { user: client?.user, ...data };
     await this.chatSocketService.sendMessageToChannel(message);
   }

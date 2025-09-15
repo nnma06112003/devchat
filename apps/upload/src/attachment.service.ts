@@ -62,8 +62,8 @@ export class AttachmentService {
 
     // Lưu DB
     const attachment = this.attachmentRepo.create({
-      url: fileUrl,
-      type: params.type,
+      fileUrl: fileUrl,
+      mimeType: params.type,
       filename: params.filename,
       message,
     });
@@ -85,8 +85,8 @@ export class AttachmentService {
     if (!message) throw new Error('Message not found');
 
     const attachment = this.attachmentRepo.create({
-      url: params.url,
-      type: params.type,
+      fileUrl: params.url,
+      mimeType: params.type,
       filename: params.filename,
       message,
     });

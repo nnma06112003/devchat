@@ -12,14 +12,16 @@ import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Request } from 'express';
 import { ChatSocketService } from './socket.service';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 // Tất cả HTTP từ FE đi qua controller này → định tuyến tới Kafka
 @Controller('api')
 export class GatewayController {
   // FE: GET /api/channels/unread-map
-  constructor(private readonly gw: GatewayService, private readonly ChatSocketService: ChatSocketService) {}
-  
-  
+  constructor(
+    private readonly gw: GatewayService,
+    private readonly ChatSocketService: ChatSocketService,
+  ) {}
 
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
@@ -95,8 +97,10 @@ export class GatewayController {
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
     // Lấy map chưa đọc từ Redis
     // Trả về { channelId: count }
-   const data = await this.ChatSocketService.getRegisteredUnreadChannels(user.id);
-   return { code: 200, msg: 'Success', data };
+    const data = await this.ChatSocketService.getRegisteredUnreadChannels(
+      user.id,
+    );
+    return { code: 200, msg: 'Success', data };
   }
   // ---------- CHAT ----------
   // FE: POST /api/channels/:channelId/messages
@@ -175,5 +179,22 @@ export class GatewayController {
       data: { key: q?.key, limit: q?.limit ?? 5 },
       ...q,
     });
+  }
+
+  //Upload file
+  @UseGuards(JwtAuthGuard)
+  @Post('upload/get-presigned-url')
+  async getPresignedUrl(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('upload', 'getPresignedUrl', payload);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('upload/get-object-url')
+  async getObjectUrl(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('upload', 'getObject', payload);
   }
 }

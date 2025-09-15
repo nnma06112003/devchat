@@ -1,4 +1,3 @@
-
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { ChatService } from './chat.service';
@@ -12,17 +11,34 @@ export class ChatController {
   async handleChatMessage(@Payload() payload: any) {
     switch (payload.cmd) {
       case 'sendMessage':
-        return await this.chatService.sendMessage(payload.data.user, payload.data);
+        return await this.chatService.sendMessage(
+          payload.data.user,
+          payload.data,
+          payload.data.presignedAttachments,
+        );
       case 'createChannel':
-        return await this.chatService.createChannel(payload.data.user, payload.data);
+        return await this.chatService.createChannel(
+          payload.data.user,
+          payload.data,
+        );
       case 'listChannelsMessages':
-        return await this.chatService.fetchHistory(payload.data.user, payload.data.channel_id, payload.data);
+        return await this.chatService.fetchHistory(
+          payload.data.user,
+          payload.data.channel_id,
+          payload.data,
+        );
       case 'listChannels':
         return await this.chatService.listChannels(payload.data.user);
       case 'searchChatEntities':
-        return await this.chatService.searchChatEntities(payload.data.user, payload.data);
+        return await this.chatService.searchChatEntities(
+          payload.data.user,
+          payload.data,
+        );
       case 'joinChannel':
-        return await this.chatService.joinChannel(payload.data.user, payload.data);
+        return await this.chatService.joinChannel(
+          payload.data.user,
+          payload.data,
+        );
       default:
         return { error: 'Unknown command' };
     }

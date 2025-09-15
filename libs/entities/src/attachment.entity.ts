@@ -6,6 +6,7 @@ import {
   ManyToOne,
   CreateDateColumn,
   UpdateDateColumn,
+  JoinColumn,
 } from 'typeorm';
 import { Message } from './message.entity';
 
@@ -17,17 +18,24 @@ export class Attachment {
   id: number;
 
   @Column()
-  url: string; // link đến Cloudflare R2/Images/CDN
+  fileUrl: string; // link đến Cloudflare R2/Images/CDN
 
-  @Column({ type: 'varchar', length: 50 })
-  type: AttachmentType; // loại file: image, video, file,...
+  @Column()
+  mimeType: string; // loại file: image, video, file,...
+
+  @Column()
+  key: string;
 
   @Column({ nullable: true })
   filename?: string; // tên gốc của file
 
+  @Column({ nullable: true })
+  fileSize?: number; // kích thước file
+
   @ManyToOne(() => Message, (message) => message.attachments, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'messageId' })
   message: Message;
 
   @CreateDateColumn()

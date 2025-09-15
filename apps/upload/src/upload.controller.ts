@@ -1,4 +1,3 @@
-
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { UploadService } from './upload.service';
@@ -11,12 +10,14 @@ export class UploadController {
   @MessagePattern('svc.upload.exec')
   async handleUploadMessage(@Payload() payload: any) {
     switch (payload.cmd) {
-      case 'uploadFile':
+      case 'getPresignedUrl':
         return await this.UploadService.getPresignedUrl(
           payload.data.filename,
           payload.data.contentType,
-          payload.data.userId,
+          payload.data.user.id,
         );
+      case 'getObject':
+        return await this.UploadService.getObject(payload.data.key);
       default:
         return { error: 'Unknown command' };
     }
