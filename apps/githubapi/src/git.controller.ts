@@ -17,6 +17,9 @@ export class GitController {
         return await this.GitService.githubAppSetup(payload.data.userId, payload.data.installationId, payload.data.userToken);
       case 'get_install_app_url':
         return this.GitService.getInstallAppUrl(payload.data.state);
+       case 'get_repo_installation':
+        return this.GitService.listInstallationRepos(payload.data.userId);
+      
       default:
         return { error: 'Unknown command' };
     }

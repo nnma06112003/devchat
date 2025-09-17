@@ -86,4 +86,11 @@ export class User {
   // (Optional) Lưu các repo đã cấp quyền (jsonb)
   @Column({ type: 'jsonb', nullable: true })
   github_repositories?: any[];
+
+  // ====== Installation Access Token (IAT) fields ======
+  @Column({ type: 'text', nullable: true })
+  github_iat_token?: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  github_iat_expires_at?: Date;
 }

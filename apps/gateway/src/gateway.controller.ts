@@ -62,7 +62,7 @@ export class GatewayController {
     }
     const payload = { user: { id: stateDecoded.userId }, github_installation_id: installationId };
     await this.gw.exec('auth', 'update_profile', payload);
-
+    await this.gw.exec('git', 'github_app_setup', { userId: stateDecoded.userId, installationId, userToken: null });
     const result: any = await this.gw.exec('auth', 'get_token_info', { userId: stateDecoded.userId });
     if (result && result?.data) {
       const access_token = result.data.access_token;
@@ -128,6 +128,15 @@ async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('cod
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
     // Lấy map chưa đọc từ Redis
     return this.gw.exec('auth', 'get_profile', { userId: user.id });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('git/get_repo_installation')
+   async get_repo_installation(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+    // Lấy map chưa đọc từ Redis
+    return this.gw.exec('git', 'get_repo_installation', { userId: user.id });
   }
 
   // FE: POST /api/auth/refresh

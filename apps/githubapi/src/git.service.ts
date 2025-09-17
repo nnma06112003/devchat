@@ -5,8 +5,15 @@ import { Message, User } from '@myorg/entities';
 import { Channel } from '@myorg/entities';
 import { BaseService, RpcCustomException } from '@myorg/common';
 import * as jwt from 'jsonwebtoken';
-import { log } from 'console';
 
+
+type InstallationAccessToken = {
+  token: string;
+  expires_at: string; // ISO
+  permissions: Record<string, 'read' | 'write'>;
+  repositories?: Array<any>;
+  // ... các field khác GitHub trả về
+};
 
 @Injectable()
 export class GitService extends BaseService<Message | Channel> {
@@ -169,48 +176,80 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
 
   // === Tạo App JWT để gọi API /app/... (JWT sống 10 phút) ===
   createAppJWT() {
-    const now = Math.floor(Date.now() / 1000);
-    const payload = {
-      iat: now - 60, // clock skew
-      exp: now + 9 * 60, // 9 phút
-      iss: process.env.GITHUB_APP_ID,
-    };
-
-    const token = jwt.sign(payload, process.env.GITHUB_APP_PRIVATE_KEY as string, {
-      algorithm: 'RS256',
-    });
-    return token;
-  }
+  const now = Math.floor(Date.now() / 1000);
+  const payload = { iat: now - 60, exp: now + 9 * 60, iss: process.env.GITHUB_APP_ID };
+  const privateKey = (process.env.GITHUB_APP_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+ // quan trọng
+  return jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+}
 
   // === Đổi Installation -> Installation Access Token (IAT) ===
-  async createInstallationAccessToken(installationId: number) {
-    const appJwt = this.createAppJWT();
-    const url = `https://api.github.com/app/installations/${installationId}/access_tokens`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${appJwt}`,
-        Accept: 'application/vnd.github+json',
-      },
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Failed to create IAT: ${res.status} ${txt}`);
-    }
-    return res.json(); // { token, expires_at, permissions, repositories }
+async createInstallationAccessToken(installationId: number): Promise<any> {
+  if (!installationId || Number.isNaN(Number(installationId))) {
+    throw new RpcCustomException(`Invalid installationId: ${installationId}`, 400);
   }
 
-  // === Dùng IAT: list repos đã cấp cho installation ===
-  async listInstallationRepos(iat: string, page = 1, perPage = 50) {
-    const url = new URL('https://api.github.com/installation/repositories');
-    url.searchParams.set('page', String(page));
-    url.searchParams.set('per_page', String(perPage));
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${iat}`, Accept: 'application/vnd.github+json' },
-    });
-    if (!res.ok) throw new Error('Failed to list installation repositories');
-    return res.json(); // { total_count, repositories: [...] }
+  const appJwt = this.createAppJWT();
+  const url = `https://api.github.com/app/installations/${installationId}/access_tokens`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${appJwt}`,
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'mychat-app/1.0 (+http://localhost:3088)',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ /* optional: permissions/repositories */ }),
+  });
+
+  const bodyText = await res.text();
+  // Luôn log mã & headers để lần sau nhìn là biết
+  const reqId = res.headers.get('x-github-request-id');
+  const ratelimit = `${res.headers.get('x-ratelimit-remaining')}/${res.headers.get('x-ratelimit-limit')}`;
+  const wwwAuth = res.headers.get('www-authenticate');
+
+  if (res.status !== 201) {
+    console.log('[IAT] status=', res.status, 'reqId=', reqId, 'rate=', ratelimit);
+    if (wwwAuth) console.error('[IAT] www-authenticate=', wwwAuth);
+    console.log('[IAT] body=', bodyText);
+
+    // Thử parse JSON để nêu lỗi gọn
+    try {
+      const j = JSON.parse(bodyText);
+      console.log
+      (
+        `Failed to create IAT: ${res.status} ${j.message || ''}`
+      );
+    } catch {
+      console.log
+      (`Failed to create IAT: ${res.status}`);
+    }
   }
+
+  try {
+    return JSON.parse(bodyText) as InstallationAccessToken;
+  } catch {
+    console.log('[IAT] Invalid JSON:', bodyText);
+    console.log('Invalid JSON from GitHub when creating IAT', 502);
+  }
+}
+
+  // === Dùng IAT: list repos đã cấp cho installation ===
+async listInstallationRepos(userId: any, page = 1, perPage = 50) {
+  const user: any = await this.userRepo.findOne({ where: { id: userId } });
+  if (!user) throw new RpcCustomException('User not found', 404);
+  const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(Number(user.github_installation_id));
+  const url = new URL('https://api.github.com/installation/repositories');
+  url.searchParams.set('page', String(page));
+  url.searchParams.set('per_page', String(perPage));
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${iatRes.token}`, Accept: 'application/vnd.github+json' },
+  });
+  if (!res.ok) throw new RpcCustomException('Failed to list installation repositories', 402);
+  return res.json(); // { total_count, repositories: [...] }
+}
 
   // === Dùng IAT: list branches của repo ===
   async listBranches(iat: string, owner: string, repo: string, page = 1, perPage = 50) {
@@ -256,7 +295,7 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
     return `${base}?state=${encodeURIComponent(state)}`; // luôn encode
   }
 
-async githubAppSetup(userId: string, installationId: number, userToken: string) {
+async githubAppSetup(userId: string, installationId: number, userToken?: string) {
   // 1) Xác thực user
   const user: any = await this.userRepo.findOne({ where: { id: userId } });
   if (!user) throw new RpcCustomException('User not found', 404);
@@ -279,7 +318,13 @@ async githubAppSetup(userId: string, installationId: number, userToken: string) 
   user.github_verified = true;
 
   // 4) Lấy IAT để thao tác repo
-  const iatRes = await this.createInstallationAccessToken(installationId);
+  const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(installationId);
+  console.log('IAT response:', iatRes);
+  
+
+  // Lưu token và thời gian hết hạn vào user
+  user.github_iat_token = iatRes.token;
+  user.github_iat_expires_at = new Date(iatRes.expires_at);
 
   // 5) Lưu các repo đã cấp quyền (nếu có)
   if (iatRes.repositories) {
