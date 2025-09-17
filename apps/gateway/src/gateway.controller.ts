@@ -40,14 +40,14 @@ export class GatewayController {
 
   @UseGuards(JwtAuthGuard)
   @Post('github-app/redirect')
-  async githubAppRedirect(@Res() res: Response , @Req() req: Request) {
+  async githubAppRedirect( @Req() req: Request) {
     const user = req.user as any;
     const state = encodeState({
       next: process.env.FE_URL!,
       userId: user.id,
     });
     const result : any = await this.gw.exec('git', 'get_install_app_url', { state });
-    res.redirect(result.data);
+    return {url : result.data};
   }
 
   @Get('github-app/setup')
