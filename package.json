@@ -51,6 +51,7 @@
     "class-validator": "^0.14.2",
     "handlebars": "^4.7.8",
     "ioredis": "^5.7.0",
+    "jose": "^6.1.0",
     "kafkajs": "^2.2.4",
     "nodemailer": "^7.0.6",
     "passport": "^0.7.0",

@@ -7,11 +7,28 @@ import {
   Query,
   UseGuards,
   Req,
+  Res,
 } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { ChatSocketService } from './socket.service';
+
+type StatePayload = { next: string; userId: string | number };
+
+function encodeState(obj: StatePayload) {
+  return Buffer.from(JSON.stringify(obj)).toString('base64url');
+}
+function decodeState(raw?: string): StatePayload | null {
+  if (!raw) return null;
+  try {
+    const s = raw.replace(/-/g, '+').replace(/_/g, '/');
+    const json = Buffer.from(s, 'base64').toString('utf8');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
 
 // Tất cả HTTP từ FE đi qua controller này → định tuyến tới Kafka
 @Controller('api')
@@ -19,15 +36,68 @@ export class GatewayController {
   // FE: GET /api/channels/unread-map
   constructor(private readonly gw: GatewayService, private readonly ChatSocketService: ChatSocketService) {}
   
-  
+
+  @UseGuards(JwtAuthGuard)
+  @Post('github-app/redirect')
+  async githubAppRedirect(@Res() res: Response , @Req() req: Request) {
+    const user = req.user as any;
+    const state = encodeState({
+      next: process.env.FE_URL!,
+      userId: user.id,
+    });
+    const result : any = await this.gw.exec('git', 'get_install_app_url', { state });
+    res.redirect(result.data);
+  }
+
+  @Get('github-app/setup')
+  async setup(@Query('installation_id') installationId: string,
+    @Query('setup_action') setupAction: string,
+    @Query('state') state: string,
+    @Res() res: any) {
+    // Giải mã state nếu bạn encode userId/redirect
+    const stateDecoded: any = decodeState(state);
+    if (!stateDecoded || !stateDecoded.userId) {
+      return res.redirect();
+    }
+    const payload = { user: { id: stateDecoded.userId }, github_installation_id: installationId };
+    await this.gw.exec('auth', 'update_profile', payload);
+
+    const result: any = await this.gw.exec('auth', 'get_token_info', { userId: stateDecoded.userId });
+    if (result && result?.data) {
+      const access_token = result.data.access_token;
+      const refresh_token = result.data.refresh_token;
+      return res.redirect(`${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`);
+    } else {
+      return res.redirect(process.env.FE_URL);
+    }
+  }
+
+
 
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
-  @Post('auth/github-oauth')
-  async githubOAuth(@Body('code') code: string) {
-    // gọi AuthService qua Kafka
-    return this.gw.exec('auth', 'github_oauth', code);
+  @Get('auth/github-oauth/redirect')
+  async githubOAuthRedirect() {
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const callbackUrl = process.env.GITHUB_CALLBACK_URL;
+    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}`;
+    return { url };
   }
+
+  @Get('auth/github-oauth/callback')
+async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('code') code: string, @Query('state') state?: string) {
+  const safeReq = { session: (req as any).session, headers: req.headers, user: (req as any).user };
+
+  const result: any = await this.gw.exec('git', 'github_oauth_callback', { req: safeReq, code, state: state ?? undefined });
+
+  
+
+  return res.redirect(result?.data);
+}
+
+
+
+
   // FE: POST /api/auth/login
   // Body: { email: string, password: string, otp?: string }
   @Post('auth/login')
@@ -40,12 +110,23 @@ export class GatewayController {
   async register(@Body() dto: any) {
     return this.gw.exec('auth', 'register', dto);
   }
-
+ @UseGuards(JwtAuthGuard)
+  @Post('auth/update-profile')
+  async update_profile(@Body() dto: any, @Req() req: Request) {
+    // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('auth', 'update_profile', payload);
+  }
   // FE: POST /api/auth/get_profile
   // Body: { userId: string }
+   @UseGuards(JwtAuthGuard)
   @Post('auth/get-profile')
-  async get_profile(@Body() dto: any) {
-    return this.gw.exec('auth', 'get_profile', dto);
+   async get_profile(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+    // Lấy map chưa đọc từ Redis
+    return this.gw.exec('auth', 'get_profile', { userId: user.id });
   }
 
   // FE: POST /api/auth/refresh

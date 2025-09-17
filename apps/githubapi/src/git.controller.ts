@@ -8,12 +8,15 @@ export class GitController {
   constructor(private readonly GitService: GitService) {}
 
   // Nhận message từ Gateway qua Kafka
-  @MessagePattern('svc.Git.exec')
+  @MessagePattern('svc.git.exec')
   async handleGitMessage(@Payload() payload: any) {
     switch (payload.cmd) {
-      case 'ListRepo':
-        return await this.GitService.ListRepo(payload.data.user, payload.data);
-     
+     case 'github_oauth_callback':
+        return await this.GitService.githubOAuthCallback(payload.data.req, payload.data.code, payload.data.state);
+      case 'github_app_setup':
+        return await this.GitService.githubAppSetup(payload.data.userId, payload.data.installationId, payload.data.userToken);
+      case 'get_install_app_url':
+        return this.GitService.getInstallAppUrl(payload.data.state);
       default:
         return { error: 'Unknown command' };
     }
