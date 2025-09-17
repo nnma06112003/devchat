@@ -135,7 +135,6 @@ async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('cod
    async get_repo_installation(@Req() req: Request) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
-    // Lấy map chưa đọc từ Redis
     return this.gw.exec('git', 'get_repo_installation', { userId: user.id });
   }
 
