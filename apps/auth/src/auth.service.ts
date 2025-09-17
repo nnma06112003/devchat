@@ -52,124 +52,7 @@ export class AuthService {
       username: u.username,
     }));
   }
-  // Đăng nhập bằng Github OAuth
-  async loginGithubOAuth(code: string): Promise<any> {
-    // 1. Đổi code lấy access_token từ GitHub
-    const tokenRes = await axios.post(
-      'https://github.com/login/oauth/access_token',
-      {
-        client_id: process.env.GITHUB_CLIENT_ID,
-        client_secret: process.env.GITHUB_CLIENT_SECRET,
-        code,
-      },
-      { headers: { Accept: 'application/json' } },
-    );
 
-    const accessToken = tokenRes.data.access_token;
-
-    // 2. Lấy profile GitHub
-    const { data: profile } = await axios.get('https://api.github.com/user', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    // Có thể gọi thêm API này để lấy email chính xác hơn:
-    const { data: emails } = await axios.get(
-      'https://api.github.com/user/emails',
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
-    interface GithubEmail {
-      email: string;
-      primary: boolean;
-      verified: boolean;
-      visibility: string | null;
-    }
-
-    const primaryEmail: string | undefined = (emails as GithubEmail[]).find(
-      (e) => e.primary,
-    )?.email;
-
-    // Chuẩn hóa profile
-    const githubProfile = {
-      id: profile.id,
-      username: profile.login,
-      avatar: profile.avatar_url,
-      email: profile.email ?? primaryEmail, // có thể null nếu user ẩn email
-    };
-
-    // 3. Kiểm tra user trong DB
-    let user: any = await this.userRepository.findByProvider(
-      'github',
-      githubProfile.id,
-    );
-
-    // Nếu chưa có user bằng provider github, thử tìm theo email và link account nếu cần
-    if (!user && githubProfile.email) {
-      const existingByEmail = await this.userRepository.findByEmail(
-        githubProfile.email,
-      );
-
-      if (existingByEmail) {
-        const conllision = await this.userRepository.findByProvider(
-          'github',
-          githubProfile.id,
-        );
-
-        if (conllision && conllision.id !== existingByEmail.id) {
-          throw new RpcException({
-            msg: 'Tài khoản GitHub này đã được liên kết với một tài khoản khác',
-            status: 409,
-          });
-        }
-        // Link với account của devchat
-        existingByEmail.provider = 'github';
-        existingByEmail.provider_id = githubProfile.id;
-        // existingByEmail.avatar = githubProfile.avatar || existingByEmail.avatar;
-        existingByEmail.email_verified = true;
-        await this.userRepository.save(existingByEmail);
-        user = existingByEmail;
-      }
-    }
-
-    // Nếu chưa có thì tạo mới user
-    if (!user) {
-      user = await this.userRepository.create({
-        email: githubProfile.email,
-        username: githubProfile.username,
-        avatar: githubProfile.avatar,
-        provider: 'github',
-        provider_id: githubProfile.id,
-      } as any);
-    }
-
-    // 4. Sinh JWT
-    const payload: any = {
-      sub: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-    };
-
-    const access_token = this.jwtService.sign(payload);
-
-    const refresh_token = await this.generateAndSaverefresh_token(user);
-
-    // 5. Trả về FE
-    return {
-      access_token,
-      refresh_token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        avatar: user.avatar,
-        provider: user.provider,
-        provider_id: user.provider_id,
-        role: user.role,
-      },
-    };
-  }
   async register(registerDto: RegisterDto): Promise<any> {
     const existingUser = await this.userRepository.findByEmail(
       registerDto.email,
@@ -290,7 +173,8 @@ export class AuthService {
       email: user.email,
       username: user.username,
       role: user.role,
-      github_verified: user.github_verified
+      github_verified: user.github_verified,
+      github_installation_id: user.github_installation_id || null
     };
     const access_token = this.jwtService.sign(payload);
     const refresh_token = await this.generateAndSaverefresh_token(user);
@@ -317,7 +201,8 @@ export class AuthService {
         email: user?.email,
         username: user?.username,
         role: user?.role,
-        github_verified: user.github_verified
+        github_verified: user.github_verified,
+        github_installation_id: user.github_installation_id || null,
       };
       return userData;
     } catch (error: any) {
@@ -340,6 +225,7 @@ export class AuthService {
       username: user.username,
       role: user.role,
       github_verified: user.github_verified,
+      github_installation_id: user.github_installation_id || null,
       created_at: user.created_at,
       updated_at: user.updated_at,
     };
@@ -372,7 +258,8 @@ export class AuthService {
       email: user.email,
       username: user.username,
       role: user.role,
-      github_verified: user.github_verified
+      github_verified: user.github_verified,
+      github_installation_id: user.github_installation_id || null
     };
 
     const access_token = this.jwtService.sign(payload);
@@ -421,7 +308,8 @@ export class AuthService {
       email: user.email,
       username: user.username,
       role: user.role,
-      github_verified: user.github_verified
+      github_verified: user.github_verified,
+      github_installation_id: user.github_installation_id || null
     };
     const access_token = this.jwtService.sign(payload);
     const new_refresh_token = await this.generateAndSaverefresh_token(user);
@@ -433,111 +321,5 @@ export class AuthService {
     };
   }
 
-async handleGitHubCallback(code: string, state: string) {
-  try {
-    // 1) Exchange code -> token
-    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: process.env.GITHUB_APP_CLIENT_ID,
-        client_secret: process.env.GITHUB_APP_CLIENT_SECRET,
-        code,
-      }),
-    });
 
-    // Nếu header trả về là application/json thì dùng .json(), nếu không thì dùng .text()
-    let tokenData: any;
-    const contentType = tokenRes.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      tokenData = await tokenRes.json();
-    } else {
-      const rawText = await tokenRes.text();
-      console.log('GitHub token response:', rawText);
-      tokenData = Object.fromEntries(new URLSearchParams(rawText));
-    }
-
-    const github_user_token = tokenData.access_token;
-    console.log("github_user_token", github_user_token);
-
-    if (!github_user_token) {
-      throw new UnauthorizedException('Không lấy được access_token từ GitHub');
-    }
-
-    // 2) Get user info
-    const userRes = await fetch('https://api.github.com/user', {
-      headers: { Authorization: `Bearer ${github_user_token}` },
-    });
-    const gh = await userRes.json();
-    console.log("gh", gh);
-
-    // 3) Upsert user (merge & save 1 lần)
-    const existing = await this.userRepository.findByEmail(gh.email);
-    const userData: any = {
-      email: gh.email,
-      username: gh.login,
-      github_avatar: gh.avatar_url,
-      provider: 'github',
-      provider_id: String(gh.id),
-      github_user_token,
-      github_verified: true,
-    };
-    if (existing?.id !== undefined) {
-      userData.id = existing.id;
-    }
-    const user = await this.userRepository.save(userData);
-
-    // 4) Check installation (404 => chưa cài app)
-    let installationId: number | undefined;
-    let needInstall = false;
-    try {
-      const appJwt = await this.createAppJWT();
-      const instRes = await fetch(`https://api.github.com/users/${gh.login}/installation`, {
-        headers: {
-          Authorization: `Bearer ${appJwt}`,
-          Accept: 'application/vnd.github+json',
-        },
-      });
-      if (instRes.status === 404) {
-        needInstall = true;
-      } else {
-        const inst = await instRes.json();
-        installationId = inst.id;
-        console.log("installationId", installationId);
-      }
-    } catch (err: any) {
-      // Không throw lỗi, chỉ đánh dấu needInstall nếu 404
-      needInstall = true;
-    }
-
-    if (installationId) {
-      user.github_installation_id = String(installationId);
-      await this.userRepository.save(user); // chỉ gọi lần 2 khi có installation
-    }
-
-    return { user, needInstall, installationId };
-  } catch (e: any) {
-    console.log('GitHub OAuth failed', e);
-    throw new UnauthorizedException(e.message || 'GitHub OAuth failed');
-  }
-}
-
-private async createAppJWT(): Promise<string> {
-  const appId = process.env.GITHUB_APP_ID;
-  const privateKeyPem = process.env.GITHUB_APP_PRIVATE_KEY;
-  if (!appId || !privateKeyPem) {
-    throw new Error('Missing required GitHub App environment variables');
-  }
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iat: now - 30,
-    exp: now + 9 * 60,
-    iss: appId,
-  };
-  const jose = await import('jose');
-  const pk = await jose.importPKCS8(privateKeyPem.replace(/\\n/g, '\n'), 'RS256');
-  return await new jose.SignJWT(payload)
-    .setProtectedHeader({ alg: 'RS256' })
-    .sign(pk);
-}
 }

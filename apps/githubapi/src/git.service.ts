@@ -250,41 +250,59 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
 
   // === Helper: link cài đặt App ===
   getInstallAppUrl(state?: string) {
-  const slug = process.env.GITHUB_APP_SLUG;
-  const base = `https://github.com/apps/${slug}/installations/new`;
-  if (!state) return base;
-  return `${base}?state=${encodeURIComponent(state)}`; // luôn encode
-}
+    const slug = process.env.GITHUB_APP_SLUG;
+    const base = `https://github.com/apps/${slug}/installations/new`;
+    if (!state) return base;
+    return `${base}?state=${encodeURIComponent(state)}`; // luôn encode
+  }
 
 async githubAppSetup(userId: string, installationId: number, userToken: string) {
-  // 1) Xác thực cơ bản
+  // 1) Xác thực user
   const user: any = await this.userRepo.findOne({ where: { id: userId } });
   if (!user) throw new RpcCustomException('User not found', 404);
 
-  // 2) (Tuỳ chọn) Lấy lại gh user/email bằng token đã lưu từ OAuth
+  // 2) Lấy lại thông tin GitHub user/email nếu cần
   let email = user.github_email;
-  if (!email && userToken) {
-    const ghUser = await this.fetchGitHubUser(userToken);
+  let ghUser: any = null;
+  if ((!email || !user.github_user_id || !user.github_login) && userToken) {
+    ghUser = await this.fetchGitHubUser(userToken);
     email = ghUser.email ?? await this.fetchPrimaryEmail(userToken);
-    user.github_user_id = user.github_user_id ?? String(ghUser.id);
-    user.github_login   = user.github_login   ?? ghUser.login;
-    user.github_avatar  = user.github_avatar  ?? ghUser.avatar_url;
+    user.github_user_id = String(ghUser.id);
+    user.github_login   = ghUser.login;
+    user.github_avatar  = ghUser.avatar_url;
+    if (email) user.github_email = email;
+    user.github_user_token = userToken;
   }
 
-  // 3) Lưu installation_id
+  // 3) Lưu installation_id và xác thực
   user.github_installation_id = String(installationId);
   user.github_verified = true;
-  if (email) user.github_email = email;
-  await this.userRepo.save(user);
 
-  // 4) Lấy IAT để bạn thao tác repo ngay (nếu muốn)
+  // 4) Lấy IAT để thao tác repo
   const iatRes = await this.createInstallationAccessToken(installationId);
+
+  // 5) Lưu các repo đã cấp quyền (nếu có)
+  if (iatRes.repositories) {
+    user.github_repositories = iatRes.repositories.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      full_name: r.full_name,
+      private: r.private,
+      html_url: r.html_url,
+    }));
+  }
+
+  await this.userRepo.save(user);
 
   return {
     github_installation_id: installationId,
+    github_user_id: user.github_user_id,
+    github_login: user.github_login,
+    github_email: user.github_email,
+    github_avatar: user.github_avatar,
+    github_repositories: user.github_repositories,
     iat_token: iatRes.token,
     iat_expires_at: iatRes.expires_at,
-    repositories: iatRes.repositories,
   };
 }
 

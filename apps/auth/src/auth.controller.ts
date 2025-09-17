@@ -22,19 +22,12 @@ export class AuthController {
         return this.authService.getProfile(data.userId);
       case 'update_profile':
         return this.authService.updateProfile(data.user.id, data);
-      case 'github_oauth':
-        return this.authService.loginGithubOAuth(data);
-      case 'github_app_callback':
-        return this.authService.handleGitHubCallback(data.code, data.state);
       case 'searchUsers':
         return this.authService.searchUsers(data.user, data.data);
       case 'confirm_email':
         return this.authService.confirmEmail(data.token);
-      
       case 'get_token_info':
         return this.authService.getTokenUserData(data.userId);
-      // case 'resend_verification':
-      //   return this.authService.resendVerificationEmail(data.email);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }
