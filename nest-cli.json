@@ -38,6 +38,15 @@
         "tsConfigPath": "apps/upload/tsconfig.app.json"
       }
     },
+    "github": {
+      "type": "application",
+      "root": "apps/githubapi",
+      "sourceRoot": "apps/githubapi/src",
+      "entryFile": "main",
+      "compilerOptions": {
+        "tsConfigPath": "apps/githubapi/tsconfig.app.json"
+      }
+    },
     "entities": {
       "type": "library",
       "root": "libs/entities",

@@ -18,6 +18,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository, Not } from 'typeorm';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as crypto from 'crypto';
+// import * as jose from 'jose'; // replaced with dynamic import in createAppJWT
 
 @Injectable()
 export class AuthService {
@@ -289,6 +290,7 @@ export class AuthService {
       email: user.email,
       username: user.username,
       role: user.role,
+      github_verified: user.github_verified
     };
     const access_token = this.jwtService.sign(payload);
     const refresh_token = await this.generateAndSaverefresh_token(user);
@@ -315,6 +317,7 @@ export class AuthService {
         email: user?.email,
         username: user?.username,
         role: user?.role,
+        github_verified: user.github_verified
       };
       return userData;
     } catch (error: any) {
@@ -336,6 +339,7 @@ export class AuthService {
       email: user.email,
       username: user.username,
       role: user.role,
+      github_verified: user.github_verified,
       created_at: user.created_at,
       updated_at: user.updated_at,
     };
@@ -368,6 +372,7 @@ export class AuthService {
       email: user.email,
       username: user.username,
       role: user.role,
+      github_verified: user.github_verified
     };
 
     const access_token = this.jwtService.sign(payload);
@@ -379,4 +384,160 @@ export class AuthService {
       refresh_token: new_refresh_token ?? null,
     };
   }
+
+  async updateProfile(userId: string, data: { username?: string; email?: string , github_verified?: boolean , github_installation_id?: string }): Promise<any> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+
+    // Chỉ cập nhật các trường hợp lệ
+    if (data.username !== undefined) user.username = data.username;
+    if (data.email !== undefined) user.email = data.email;
+    if (data.github_verified !== undefined) user.github_verified = data.github_verified;
+    if (data.github_installation_id !== undefined) user.github_installation_id = data.github_installation_id;
+
+    await this.userRepository.save(user);
+
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      updated_at: user.updated_at,
+      github_verified: user.github_verified
+    };
+  }
+
+  async getTokenUserData(userId: any): Promise<any> {
+
+    const user: any = await this.userRepository.findById(userId);
+
+    if (user.refresh_token) {
+      return null;
+    }
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      github_verified: user.github_verified
+    };
+    const access_token = this.jwtService.sign(payload);
+    const new_refresh_token = await this.generateAndSaverefresh_token(user);
+
+    // 4. Trả về token mới
+    return {
+      access_token: access_token ?? null,
+      refresh_token: new_refresh_token ?? null,
+    };
+  }
+
+async handleGitHubCallback(code: string, state: string) {
+  try {
+    // 1) Exchange code -> token
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: process.env.GITHUB_APP_CLIENT_ID,
+        client_secret: process.env.GITHUB_APP_CLIENT_SECRET,
+        code,
+      }),
+    });
+
+    // Nếu header trả về là application/json thì dùng .json(), nếu không thì dùng .text()
+    let tokenData: any;
+    const contentType = tokenRes.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      tokenData = await tokenRes.json();
+    } else {
+      const rawText = await tokenRes.text();
+      console.log('GitHub token response:', rawText);
+      tokenData = Object.fromEntries(new URLSearchParams(rawText));
+    }
+
+    const github_user_token = tokenData.access_token;
+    console.log("github_user_token", github_user_token);
+
+    if (!github_user_token) {
+      throw new UnauthorizedException('Không lấy được access_token từ GitHub');
+    }
+
+    // 2) Get user info
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${github_user_token}` },
+    });
+    const gh = await userRes.json();
+    console.log("gh", gh);
+
+    // 3) Upsert user (merge & save 1 lần)
+    const existing = await this.userRepository.findByEmail(gh.email);
+    const userData: any = {
+      email: gh.email,
+      username: gh.login,
+      github_avatar: gh.avatar_url,
+      provider: 'github',
+      provider_id: String(gh.id),
+      github_user_token,
+      github_verified: true,
+    };
+    if (existing?.id !== undefined) {
+      userData.id = existing.id;
+    }
+    const user = await this.userRepository.save(userData);
+
+    // 4) Check installation (404 => chưa cài app)
+    let installationId: number | undefined;
+    let needInstall = false;
+    try {
+      const appJwt = await this.createAppJWT();
+      const instRes = await fetch(`https://api.github.com/users/${gh.login}/installation`, {
+        headers: {
+          Authorization: `Bearer ${appJwt}`,
+          Accept: 'application/vnd.github+json',
+        },
+      });
+      if (instRes.status === 404) {
+        needInstall = true;
+      } else {
+        const inst = await instRes.json();
+        installationId = inst.id;
+        console.log("installationId", installationId);
+      }
+    } catch (err: any) {
+      // Không throw lỗi, chỉ đánh dấu needInstall nếu 404
+      needInstall = true;
+    }
+
+    if (installationId) {
+      user.github_installation_id = String(installationId);
+      await this.userRepository.save(user); // chỉ gọi lần 2 khi có installation
+    }
+
+    return { user, needInstall, installationId };
+  } catch (e: any) {
+    console.log('GitHub OAuth failed', e);
+    throw new UnauthorizedException(e.message || 'GitHub OAuth failed');
+  }
+}
+
+private async createAppJWT(): Promise<string> {
+  const appId = process.env.GITHUB_APP_ID;
+  const privateKeyPem = process.env.GITHUB_APP_PRIVATE_KEY;
+  if (!appId || !privateKeyPem) {
+    throw new Error('Missing required GitHub App environment variables');
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    iat: now - 30,
+    exp: now + 9 * 60,
+    iss: appId,
+  };
+  const jose = await import('jose');
+  const pk = await jose.importPKCS8(privateKeyPem.replace(/\\n/g, '\n'), 'RS256');
+  return await new jose.SignJWT(payload)
+    .setProtectedHeader({ alg: 'RS256' })
+    .sign(pk);
+}
 }

@@ -16,7 +16,7 @@ export interface JwtPayload {
   email: string;
   username: string,
   role: UserRole;
-  iat?: number;
+  github_verified: boolean;  iat?: number;
   exp?: number;
 }
 
