@@ -53,16 +53,6 @@ export class User {
   @Column({ type: 'boolean', default: false })
   github_verified: boolean;
 
-  // ====== GitHub App fields ======
-
-  // Token user-level (ghu_...)
-  @Column({ type: 'text', nullable: true })
-  github_user_token?: string;
-
-  // Expire time của user token (nếu có)
-  @Column({ type: 'timestamptz', nullable: true })
-  github_user_token_expire?: Date;
-
   // Installation ID (dạng text cho an toàn)
   @Column({ type: 'text', nullable: true })
   github_installation_id?: string;
@@ -70,10 +60,6 @@ export class User {
   // GitHub user id (số, lưu dạng text để an toàn)
   @Column({ type: 'text', nullable: true })
   github_user_id?: string;
-
-  // GitHub login (username)
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  github_login?: string;
 
   // GitHub email
   @Column({ type: 'varchar', length: 320, nullable: true })
@@ -83,14 +69,6 @@ export class User {
   @Column({ type: 'text', nullable: true })
   github_avatar?: string;
 
-  // (Optional) Lưu các repo đã cấp quyền (jsonb)
-  @Column({ type: 'jsonb', nullable: true })
-  github_repositories?: any[];
 
-  // ====== Installation Access Token (IAT) fields ======
-  @Column({ type: 'text', nullable: true })
-  github_iat_token?: string;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  github_iat_expires_at?: Date;
+ 
 }

@@ -1,3 +1,4 @@
+import { isIn } from "class-validator";
 import {
   Body,
   Controller,
@@ -14,6 +15,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Request, Response } from 'express';
 import { ChatSocketService } from './socket.service';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { log } from 'console';
 
 type StatePayload = { next: string; userId: string | number };
 
@@ -86,15 +88,25 @@ export class GatewayController {
   }
 
   @Get('auth/github-oauth/callback')
-async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('code') code: string, @Query('state') state?: string) {
-  const safeReq = { session: (req as any).session, headers: req.headers, user: (req as any).user };
-
-  const result: any = await this.gw.exec('git', 'github_oauth_callback', { req: safeReq, code, state: state ?? undefined });
-
-  
-
-  return res.redirect(result?.data);
-}
+  async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('code') code: string, @Query('state') state?: string) {
+    const safeReq = { session: (req as any).session, headers: req.headers, user: (req as any).user };
+    const result: any = await this.gw.exec('git', 'github_oauth_callback', { req: safeReq, code, state: state ?? undefined });
+    if (result?.data && result.data.user) {
+      const isInstall = result.data.isInstall;
+      if (isInstall) {
+        return res.redirect(result?.data?.nextUrl);
+      } else {
+        const tokenInfo: any = await this.gw.exec('auth', 'get_token_info', { userId: result?.data?.user?.id });
+        if (tokenInfo && tokenInfo?.data) {
+          const access_token = tokenInfo.data.access_token;
+          const refresh_token = tokenInfo.data.refresh_token;
+          return res.redirect(`${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`);
+        } else {
+          return res.redirect(`${process.env.FE_URL}`);
+        }
+      }
+    }
+  }
 
 
 
@@ -121,7 +133,7 @@ async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('cod
   }
   // FE: POST /api/auth/get_profile
   // Body: { userId: string }
-   @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('auth/get-profile')
    async get_profile(@Req() req: Request) {
     const user = req.user as any;
@@ -130,13 +142,7 @@ async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('cod
     return this.gw.exec('auth', 'get_profile', { userId: user.id });
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Post('git/get_repo_installation')
-   async get_repo_installation(@Req() req: Request) {
-    const user = req.user as any;
-    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
-    return this.gw.exec('git', 'get_repo_installation', { userId: user.id });
-  }
+  
 
   // FE: POST /api/auth/refresh
   // Body: { refreshToken: string }
@@ -284,5 +290,22 @@ async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('cod
     const user = req.user as any;
     const payload = { user, ...dto };
     return this.gw.exec('upload', 'getObject', payload);
+  }
+
+  // GITHUB
+  @UseGuards(JwtAuthGuard)
+  @Post('git/get_repo_installation')
+   async get_repo_installation(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+    return this.gw.exec('git', 'get_repo_installation', { userId: user.id });
+  }
+
+    @UseGuards(JwtAuthGuard)
+  @Post('git/get_repo_data_by_url')
+   async get_repo_data_by_url(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+      return this.gw.exec('git', 'get_repo_data_by_url', { userId: user.id, url: dto.url, ...dto });
   }
 }

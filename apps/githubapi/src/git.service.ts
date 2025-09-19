@@ -5,6 +5,7 @@ import { Message, User } from '@myorg/entities';
 import { Channel } from '@myorg/entities';
 import { BaseService, RpcCustomException } from '@myorg/common';
 import * as jwt from 'jsonwebtoken';
+import { isIn } from 'class-validator';
 
 
 type InstallationAccessToken = {
@@ -14,6 +15,7 @@ type InstallationAccessToken = {
   repositories?: Array<any>;
   // ... các field khác GitHub trả về
 };
+
 
 @Injectable()
 export class GitService extends BaseService<Message | Channel> {
@@ -73,37 +75,36 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
   // 2) Lấy user + email
   const ghUser = await this.fetchGitHubUser(userToken);
   let email = ghUser.email ?? await this.fetchPrimaryEmail(userToken);
-
   // Nếu vẫn không có email, có thể dùng noreply, hoặc bắt user bổ sung ở FE
   if (!email) {
     email = `${ghUser.id}+noreply@users.github.com`; // hoặc null nếu bạn muốn buộc bổ sung sau
   }
 
-  // 3) Upsert user
   let user: any = await this.userRepo.findOne({ where: { email } });
-  if (!user) {
+  if (user) {
+    const updateUser: any = await this.updateGithubUserInfoIfChanged(user.id, userToken);
+    if (updateUser.github_verified && updateUser.github_installation_id) {
+      return {
+        user: { id: updateUser.id },
+        isInstall: false,
+      }
+    }
+  } else {
     user = this.userRepo.create({
       email,
       username: ghUser.login ?? null,
       role: 'user',
       github_user_id: String(ghUser.id),
-      github_login: ghUser.login,
       github_avatar: ghUser.avatar_url,
       github_email: email,
       github_verified: true,
       provider: 'github',
       provider_id: String(ghUser.id),
     });
-  } else {
-    user.github_user_id = String(ghUser.id);
-    user.github_login = ghUser.login;
-    user.github_avatar = ghUser.avatar_url;
-    user.github_email = email;
-    user.github_verified = true;
-    user.provider = user.provider ?? 'github';
-    user.provider_id = user.provider_id ?? String(ghUser.id);
+    await this.userRepo.save(user);
   }
-  await this.userRepo.save(user);
+
+  
 
   // 4) Lưu session tạm nếu bạn cần dùng tiếp ở setup
   (req as any).session = {
@@ -115,26 +116,14 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
       githubVerified: true,
     },
   };
-
-  // // 5) Chuẩn bị payload để FE/Gateway ký JWT
-  // const payload: any = {
-  //   sub: user.id,
-  //   email: user.email,
-  //   username: user.username,
-  //   role: user.role ?? 'user',
-  //   github_verified: !!user.github_verified,
-  // };
-
-  // 6) Xác định nextUrl
   let nextUrl = state || process.env.FE_URL!;
   if (!user.github_installation_id) {
     const statePayload = { next: nextUrl, userId: user.id };
     const encoded = Buffer.from(JSON.stringify(statePayload), 'utf8').toString('base64url');
     nextUrl = this.getInstallAppUrl(encoded); // → URL install app
+    
   }
-
-  // 7) Trả về cho Gateway: có cả URL (để redirect) và payload (để set-cookie JWT)
-  return nextUrl;
+  return { nextUrl, user ,isInstall: true };
 }
 
   
@@ -166,22 +155,21 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
     const res = await fetch('https://api.github.com/user/installations', {
       headers: { Authorization: `Bearer ${userToken}`, Accept: 'application/vnd.github+json' },
     });
-     const text = await res.text();
-  if (!res.ok) {
-    console.log('Failed to list installations:', res.status, text); // Log chi tiết lỗi
-    // throw new Error('Failed to list installations');
-  }
-  return JSON.parse(text); // { total_count, installations: [...] }
+    const text = await res.text();
+    if (!res.ok) {
+      console.log('Failed to list installations:', res.status, text); // Log chi tiết lỗi
+      // throw new Error('Failed to list installations');
+    }
+    return JSON.parse(text); // { total_count, installations: [...] }
   }
 
   // === Tạo App JWT để gọi API /app/... (JWT sống 10 phút) ===
   createAppJWT() {
-  const now = Math.floor(Date.now() / 1000);
-  const payload = { iat: now - 60, exp: now + 9 * 60, iss: process.env.GITHUB_APP_ID };
-  const privateKey = (process.env.GITHUB_APP_PRIVATE_KEY || '').replace(/\\n/g, '\n');
- // quan trọng
-  return jwt.sign(payload, privateKey, { algorithm: 'RS256' });
-}
+    const now = Math.floor(Date.now() / 1000);
+    const payload = { iat: now - 60, exp: now + 9 * 60, iss: process.env.GITHUB_APP_ID };
+    const privateKey = (process.env.GITHUB_APP_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+    return jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+  }
 
   // === Đổi Installation -> Installation Access Token (IAT) ===
 async createInstallationAccessToken(installationId: number): Promise<any> {
@@ -235,33 +223,81 @@ async createInstallationAccessToken(installationId: number): Promise<any> {
     console.log('Invalid JSON from GitHub when creating IAT', 502);
   }
 }
+// === Dùng endpoint tĩnh (ví dụ: installation/repositories) ===
+private async fetchFromGithubEndpoint(
+  userId: number,
+  endpoint: string,
+  params: Record<string, any> = {}
+) {
+  const user = await this.userRepo.findOne({ where: { id: userId } });
+  if (!user) throw new RpcCustomException("User not found", 404);
 
-  // === Dùng IAT: list repos đã cấp cho installation ===
-async listInstallationRepos(userId: any, page = 1, perPage = 50) {
-  const user: any = await this.userRepo.findOne({ where: { id: userId } });
-  if (!user) throw new RpcCustomException('User not found', 404);
-  const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(Number(user.github_installation_id));
-  const url = new URL('https://api.github.com/installation/repositories');
-  url.searchParams.set('page', String(page));
-  url.searchParams.set('per_page', String(perPage));
+  const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(
+    Number(user.github_installation_id)
+  );
+
+  const url = new URL(`https://api.github.com/${endpoint}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${iatRes.token}`, Accept: 'application/vnd.github+json' },
+    headers: {
+      Authorization: `Bearer ${iatRes.token}`,
+      Accept: "application/vnd.github+json",
+    },
   });
-  if (!res.ok) throw new RpcCustomException('Failed to list installation repositories', 402);
-  return res.json(); // { total_count, repositories: [...] }
+
+  if (!res.ok) {
+    throw new RpcCustomException(`GitHub API failed: ${res.statusText}`, res.status);
+  }
+  return res.json();
 }
 
-  // === Dùng IAT: list branches của repo ===
-  async listBranches(iat: string, owner: string, repo: string, page = 1, perPage = 50) {
-    const url = new URL(`https://api.github.com/repos/${owner}/${repo}/branches`);
-    url.searchParams.set('page', String(page));
-    url.searchParams.set('per_page', String(perPage));
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${iat}`, Accept: 'application/vnd.github+json' },
-    });
-    if (!res.ok) throw new Error('Failed to list branches');
-    return res.json();
+// === Dùng url trực tiếp từ repo JSON ===
+private async fetchFromGithubUrl(
+  userId: number,
+  rawUrl: string,
+  params: Record<string, any> = {}
+) {
+  const user = await this.userRepo.findOne({ where: { id: userId } });
+  if (!user) throw new RpcCustomException("User not found", 404);
+
+  const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(
+    Number(user.github_installation_id)
+  );
+
+  // Xóa template {...} trong url (ví dụ commits{/sha} -> commits)
+  const cleanUrl = rawUrl.replace(/\{.*\}/, "");
+
+  const url = new URL(cleanUrl);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${iatRes.token}`,
+      Accept: "application/vnd.github+json",
+    },
+  });
+
+  if (!res.ok) {
+    throw new RpcCustomException(`GitHub API failed: ${res.statusText}`, res.status);
   }
+  return res.json();
+}
+
+  // === Dùng IAT: list repos đã cấp cho installation ===
+// Giữ nguyên listInstallationRepos (endpoint tĩnh)
+async listInstallationRepos(userId: number, page = 1, perPage = 50) {
+  return this.fetchFromGithubEndpoint(userId, "installation/repositories", {
+    page,
+    per_page: perPage,
+  });
+}
+
+// Load bất kỳ theo url GitHub API có sẵn
+async loadFromRepoLink(userId: number, url: string, params?: Record<string, any>) {
+  return this.fetchFromGithubUrl(userId, url, params);
+}
+
 
   // === Dùng IAT: tạo Pull Request ===
   async createPullRequest(iat: string, owner: string, repo: string, params: {
@@ -296,59 +332,53 @@ async listInstallationRepos(userId: any, page = 1, perPage = 50) {
   }
 
 async githubAppSetup(userId: string, installationId: number, userToken?: string) {
-  // 1) Xác thực user
+
   const user: any = await this.userRepo.findOne({ where: { id: userId } });
   if (!user) throw new RpcCustomException('User not found', 404);
-
-  // 2) Lấy lại thông tin GitHub user/email nếu cần
-  let email = user.github_email;
-  let ghUser: any = null;
-  if ((!email || !user.github_user_id || !user.github_login) && userToken) {
-    ghUser = await this.fetchGitHubUser(userToken);
-    email = ghUser.email ?? await this.fetchPrimaryEmail(userToken);
-    user.github_user_id = String(ghUser.id);
-    user.github_login   = ghUser.login;
-    user.github_avatar  = ghUser.avatar_url;
-    if (email) user.github_email = email;
-    user.github_user_token = userToken;
-  }
-
-  // 3) Lưu installation_id và xác thực
+  // await this.updateGithubUserInfoIfChanged(userId, userToken);
   user.github_installation_id = String(installationId);
-  user.github_verified = true;
-
-  // 4) Lấy IAT để thao tác repo
-  const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(installationId);
-  console.log('IAT response:', iatRes);
-  
-
-  // Lưu token và thời gian hết hạn vào user
-  user.github_iat_token = iatRes.token;
-  user.github_iat_expires_at = new Date(iatRes.expires_at);
-
-  // 5) Lưu các repo đã cấp quyền (nếu có)
-  if (iatRes.repositories) {
-    user.github_repositories = iatRes.repositories.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      full_name: r.full_name,
-      private: r.private,
-      html_url: r.html_url,
-    }));
-  }
-
   await this.userRepo.save(user);
-
   return {
     github_installation_id: installationId,
     github_user_id: user.github_user_id,
     github_login: user.github_login,
     github_email: user.github_email,
     github_avatar: user.github_avatar,
-    github_repositories: user.github_repositories,
-    iat_token: iatRes.token,
-    iat_expires_at: iatRes.expires_at,
   };
+  }
+  
+async updateGithubUserInfoIfChanged(userId: string,userToken: string) {
+  const user: any = await this.userRepo.findOne({ where: { id: userId } });
+  if (!user) throw new RpcCustomException('User not found', 404);
+
+  let changed = false;
+  const ghUser = await this.fetchGitHubUser(userToken);
+  const email = ghUser.email ?? await this.fetchPrimaryEmail(userToken);
+  if (ghUser) {
+    if (user.github_user_id !== String(ghUser.id)) {
+      user.github_user_id = String(ghUser.id);
+      changed = true;
+    }
+    if (user.github_login !== ghUser.login) {
+      user.github_login = ghUser.login;
+      changed = true;
+    }
+    if (user.github_avatar !== ghUser.avatar_url) {
+      user.github_avatar = ghUser.avatar_url;
+      changed = true;
+    }
+  }
+
+  if (email && user.github_email !== email) {
+    user.github_email = email;
+    changed = true;
+  }
+
+  if (changed) {
+    await this.userRepo.save(user);
+    return user;
+  }
+  return null;
 }
 
 

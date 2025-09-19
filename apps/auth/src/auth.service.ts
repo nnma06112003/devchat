@@ -300,9 +300,9 @@ export class AuthService {
 
     const user: any = await this.userRepository.findById(userId);
 
-    if (user.refresh_token) {
-      return null;
-    }
+    // if (user.refresh_token) {
+    //   return null;
+    // }
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
