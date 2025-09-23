@@ -39,6 +39,20 @@ export class ChatController {
           payload.data.user,
           payload.data,
         );
+      
+       case 'addRepositoriesToChannel':
+        return await this.chatService.addRepositoriesToChannel(
+          payload.data.user.id,
+          payload.data.channel_id,
+          payload.data.repository_ids,
+        );
+
+       case 'listRepositoriesByChannel':
+        return await this.chatService.listRepositoriesByChannel(
+          payload.data.user.id,
+          payload.data.channel_id,
+          payload.data,
+        );
       default:
         return { error: 'Unknown command' };
     }

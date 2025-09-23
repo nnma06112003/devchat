@@ -21,6 +21,8 @@ export class GitController {
         return this.GitService.listInstallationRepos(payload.data.userId);
       case 'get_repo_data_by_url':
         return this.GitService.loadFromRepoLink(payload.data.userId, payload.data.url || '', payload.data);
+      case 'get_repo_by_ids':
+        return this.GitService.getMultipleReposInfo(payload.data.items);
 
       default:
         return { error: 'Unknown command' };

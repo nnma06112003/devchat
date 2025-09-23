@@ -14,6 +14,7 @@ import {
 } from 'typeorm';
 import { Message } from './message.entity';
 import { User } from './user.entity';
+import { Repository } from './repository.entity';
 
 @Entity('channels')
 export class Channel {
@@ -49,4 +50,7 @@ export class Channel {
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn()
   owner?: User;
+
+  @ManyToMany(() => Repository, (repo) => repo.channels)
+  repositories: Repository[];
 }

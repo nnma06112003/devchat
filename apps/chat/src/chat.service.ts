@@ -5,6 +5,7 @@ import { Attachment, Message, User } from '@myorg/entities';
 import { Channel } from '@myorg/entities';
 import { BaseService } from '@myorg/common';
 import { RpcException } from '@nestjs/microservices';
+import { Repository as RepoEntity } from '@myorg/entities'; // Đảm bảo import đúng entity Repository
 
 @Injectable()
 export class ChatService extends BaseService<Message | Channel> {
@@ -654,4 +655,128 @@ export class ChatService extends BaseService<Message | Channel> {
 
     return result;
   }
+
+  async addRepositoriesToChannel(
+    userId: string | number,
+    channelId: string | number,
+    repoIds: string[]
+  ) {
+    // 1. Kiểm tra danh sách repo_id hợp lệ
+    if (!Array.isArray(repoIds) || repoIds.length === 0) {
+      throw new RpcException({ msg: 'Danh sách repo_id không hợp lệ', status: 400 });
+    }
+
+    // 2. Kiểm tra user tồn tại và đã có installation_id
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy user', status: 404 });
+    }
+    if (!user.github_installation_id) {
+      throw new RpcException({ msg: 'User chưa cài đặt GitHub App', status: 400 });
+    }
+
+    // 3. Kiểm tra channel tồn tại và user là thành viên
+    const channel = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['users'],
+    });
+    if (!channel) {
+      throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    }
+    const isMember = channel.users.some((u) => String(u.id) === String(user.id));
+    if (!isMember) {
+      throw new RpcException({ msg: 'Bạn không phải thành viên của kênh này', status: 403 });
+    }
+
+    // 4. Kiểm tra repo đã liên kết với channel chưa
+    const repoRepo = this.attachmentRepo.manager.getRepository(RepoEntity);
+    for (const rpid of repoIds) {
+      const repo = await repoRepo.findOne({
+        where: { repo_id: rpid, user: { id: user.id } },
+        relations: ['channels'],
+      });
+      if (repo && repo.channels?.some((c) => String(c.id) === String(channel.id))) {
+        throw new RpcException({ msg: `Bạn đã thêm repo ${rpid} vào channel này rồi`, status: 400 });
+      }
+    }
+
+    // 5. Thêm các repo vào DB (nếu chưa có), liên kết với user và channel
+    const repos: RepoEntity[] = [];
+    for (const rpid of repoIds) {
+      let repo = await repoRepo.findOne({ where: { repo_id: rpid, user: { id: user.id } }, relations: ['channels'] });
+      if (!repo) {
+        repo = repoRepo.create({ repo_id: rpid, user });
+        await repoRepo.save(repo);
+      }
+      // Liên kết repo với channel nếu chưa có
+      if (!repo.channels) repo.channels = [];
+      const alreadyLinked = repo.channels.some((c) => String(c.id) === String(channel.id));
+      if (!alreadyLinked) {
+        repo.channels.push(channel);
+        await repoRepo.save(repo);
+      }
+      repos.push(repo);
+    }
+
+    return {
+      repositories: repos.map((r) => ({
+        id: r.id,
+        repo_id: r.repo_id,
+      })),
+    };
+  }
+
+  async listRepositoriesByChannel(
+    userId: string | number,
+    channelId: string | number,
+    data: {
+      order?: 'asc' | 'desc',
+      limit?: number,
+      page?: number
+    }
+  ) {
+    // Set default values
+    const order = data.order ?? 'asc';
+    const limit = data.limit ?? 20;
+    const page = data.page ?? 1;
+
+    // 1. Kiểm tra channel tồn tại và user là thành viên
+    const channel = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['users', 'repositories', 'repositories.user'],
+    });
+    if (!channel) {
+      throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    }
+    const isMember = channel.users.some((u) => String(u.id) === String(userId));
+    if (!isMember) {
+      throw new RpcException({ msg: 'Bạn không phải thành viên của kênh này', status: 403 });
+    }
+
+    // 2. Lấy danh sách repo, sort theo id
+    let repos = [...(channel.repositories || [])];
+    repos.sort((a, b) =>
+      order === 'asc'
+        ? Number(a.id) - Number(b.id)
+        : Number(b.id) - Number(a.id)
+    );
+
+    // 3. Phân trang
+    const total = repos.length;
+    const start = (page - 1) * limit;
+    const end = start + limit;
+    const pagedRepos = repos.slice(start, end);
+
+    // 4. Trả về thông tin repo cần thiết
+    return {
+      total,
+      page,
+      limit,
+      items: pagedRepos.map((repo) => ({
+        repo_id: repo.repo_id,
+        user_id: repo.user?.id || null,
+      })),
+    };
+  }
+
 }
