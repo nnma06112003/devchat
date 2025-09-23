@@ -277,13 +277,11 @@ private async fetchFromGithubUrl(
   rawUrl: string,
   params: Record<string, any> = {}
 ) {
-  let installation_id: number | null = 0;// Đây là userid của người dùng chứ không phải installation_id
-  const user:any = await this.userRepo.findOne({ where: { id: (params.installation_id || userId) } });
-    if (!user) throw new RpcCustomException("User not found", 404);
-    installation_id = user.github_installation_id;
-    
+ // Đây là userid của người dùng chứ không phải installation_id
+  const user:any = await this.userRepo.findOne({ where: { id: (params?.installation_id ? params.installation_id : userId) } });
+  if (!user) throw new RpcCustomException("User not found", 404);  
   const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(
-    Number(installation_id)
+    Number(user.github_installation_id)
   );
   //console.log('Fetching from iatRes iatRes:', iatRes?.token, 'installation_id', installation_id);
 
