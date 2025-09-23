@@ -53,7 +53,7 @@ async exchangeOAuthCodeForToken(code: string) {
   });
 
   const data = await res.json();
-  console.log('GitHub token raw response:', data); // <-- Thêm dòng này
+  //console.log('GitHub token raw response:', data); // <-- Thêm dòng này
 
   if (!res.ok || data.error) {
     return { ok: false, status: res.status, error: data.error_description || data.error || JSON.stringify(data) };
@@ -157,7 +157,7 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
     });
     const text = await res.text();
     if (!res.ok) {
-      console.log('Failed to list installations:', res.status, text); // Log chi tiết lỗi
+      //console.log('Failed to list installations:', res.status, text); // Log chi tiết lỗi
       // throw new Error('Failed to list installations');
     }
     return JSON.parse(text); // { total_count, installations: [...] }
@@ -199,19 +199,19 @@ async createInstallationAccessToken(installationId: number): Promise<any> {
   const wwwAuth = res.headers.get('www-authenticate');
 
   if (res.status !== 201) {
-    console.log('[IAT] status=', res.status, 'reqId=', reqId, 'rate=', ratelimit);
+    //console.log('[IAT] status=', res.status, 'reqId=', reqId, 'rate=', ratelimit);
     if (wwwAuth) console.error('[IAT] www-authenticate=', wwwAuth);
-    console.log('[IAT] body=', bodyText);
+    //console.log('[IAT] body=', bodyText);
 
     // Thử parse JSON để nêu lỗi gọn
     try {
       const j = JSON.parse(bodyText);
-      console.log
+      //console.log
       (
         `Failed to create IAT: ${res.status} ${j.message || ''}`
       );
     } catch {
-      console.log
+      //console.log
       (`Failed to create IAT: ${res.status}`);
     }
   }
@@ -219,8 +219,8 @@ async createInstallationAccessToken(installationId: number): Promise<any> {
   try {
     return JSON.parse(bodyText) as InstallationAccessToken;
   } catch {
-    console.log('[IAT] Invalid JSON:', bodyText);
-    console.log('Invalid JSON from GitHub when creating IAT', 502);
+    //console.log('[IAT] Invalid JSON:', bodyText);
+    //console.log('Invalid JSON from GitHub when creating IAT', 502);
   }
 }
 // === Dùng endpoint tĩnh (ví dụ: installation/repositories) ===
@@ -264,6 +264,12 @@ private async fetchFromGithubEndpoint(
   return res.json();
 }
 
+async listInstallationRepos(userId: number, page = 1, perPage = 50) {
+  return this.fetchFromGithubEndpoint(userId, "installation/repositories", {
+    page,
+    per_page: perPage,
+  });
+}
 
 // === Dùng url trực tiếp từ repo JSON ===
 private async fetchFromGithubUrl(
@@ -271,17 +277,15 @@ private async fetchFromGithubUrl(
   rawUrl: string,
   params: Record<string, any> = {}
 ) {
-  let installation_id: number | null = null;// Đây là userid của người dùng chứ không phải installation_id
-  const user = await this.userRepo.findOne({ where: { id: (params.installation_id || userId) } });
+  let installation_id: number | null = 0;// Đây là userid của người dùng chứ không phải installation_id
+  const user:any = await this.userRepo.findOne({ where: { id: (params.installation_id || userId) } });
     if (!user) throw new RpcCustomException("User not found", 404);
-    installation_id = Number(user?.github_installation_id || 0);
-    if (!installation_id) {
-      throw new RpcCustomException("User has no installation_id", 400);
-    }
-
+    installation_id = user.github_installation_id;
+    
   const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(
     Number(installation_id)
   );
+  //console.log('Fetching from iatRes iatRes:', iatRes?.token, 'installation_id', installation_id);
 
   // Xóa template {...} trong url (ví dụ commits{/sha} -> commits)
   const cleanUrl = rawUrl.replace(/\{.*\}/, "");
@@ -296,28 +300,20 @@ private async fetchFromGithubUrl(
     },
   });
 
-  if (!res.ok) {
-    throw new RpcCustomException(`GitHub API failed: ${res.statusText}`, res.status);
-  }
+  // if (!res.ok) {
+  //   throw new RpcCustomException(`GitHub API failed: ${res}`, res.status);
+  // }
   return res.json();
 }
 
   // === Dùng IAT: list repos đã cấp cho installation ===
 // Giữ nguyên listInstallationRepos (endpoint tĩnh)
-async listInstallationRepos(userId: number, page = 1, perPage = 50) {
-  return this.fetchFromGithubEndpoint(userId, "installation/repositories", {
-    page,
-    per_page: perPage,
-  });
-}
 
   
 async getMultipleReposInfo(
   items: { repo_id: string; user_id: number }[],
 ) {
-  try {
-    // Tạo mảng promise
-    const promises = items.map(item => {
+  const promises = items.map(item => {
       // Giả sử endpoint repo API dùng rawUrl dựa trên repo_id
       const rawUrl = `https://api.github.com/repositories/${item.repo_id}`;
       return this.fetchFromGithubUrl(item.user_id, rawUrl);
@@ -332,9 +328,6 @@ async getMultipleReposInfo(
       user_id: items[index].user_id,
       repo_info: data
     }));
-  } catch (error) {
-    throw new RpcCustomException("Không load được thông tin nhiều repo", 404);
-  }
 }
 // Load bất kỳ theo url GitHub API có sẵn
 async loadFromRepoLink(userId: number, url: string, params?: Record<string, any>) {
