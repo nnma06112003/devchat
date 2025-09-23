@@ -35,7 +35,10 @@ export class ChatSocketService {
 
   /** Đăng ký danh sách kênh muốn nhận thông báo unread cho socketId */
   async registerUnreadChannels(socketId: string, channelIds: string[]) {
-    await this.redis.set(this.subKey(socketId), JSON.stringify(channelIds || []));
+    await this.redis.set(
+      this.subKey(socketId),
+      JSON.stringify(channelIds || []),
+    );
   }
 
   /** Lấy danh sách kênh đã đăng ký nhận thông báo unread cho socketId */
@@ -84,7 +87,10 @@ export class ChatSocketService {
         console.error('❌ Parse user_status lỗi', uid, err);
       }
     }
-    this.server.emit('presenceUpdate', { online: onlineUsers, offline: [{ userId, lastSeen }] });
+    this.server.emit('presenceUpdate', {
+      online: onlineUsers,
+      offline: [{ userId, lastSeen }],
+    });
   }
 
   async getUserStatus(userId: string) {
@@ -105,13 +111,22 @@ export class ChatSocketService {
     console.log(`🚪 User ${client.user?.id} left channel ${channelId}`);
   }
 
-  async switchChannel(client: AuthSocket, oldChannelId: string, newChannelId: string) {
+  async switchChannel(
+    client: AuthSocket,
+    oldChannelId: string,
+    newChannelId: string,
+  ) {
     this.leaveChannel(client, oldChannelId);
     await this.joinChannel(client, newChannelId);
   }
 
   /* ===================== CHANNEL & MESSAGE ===================== */
-  async createChannel(data: { userIds: string[]; name: string; user: any; type?: string }) {
+  async createChannel(data: {
+    userIds: string[];
+    name: string;
+    user: any;
+    type?: string;
+  }) {
     const tempId = Date.now();
     const now = new Date().toISOString();
     const channel: any = {
@@ -133,13 +148,19 @@ export class ChatSocketService {
         const status = JSON.parse(statusStr);
         if (status.online && status.socketId) {
           this.server.to(status.socketId).emit('receiveChannel', channel);
-          console.log(`📢 Sent channel to user ${uid} at socket ${status.socketId}`);
+          console.log(
+            `📢 Sent channel to user ${uid} at socket ${status.socketId}`,
+          );
         }
       }
     }
 
     try {
-      const savedChannel: any = await this.gw.exec('chat', 'createChannel', data);
+      const savedChannel: any = await this.gw.exec(
+        'chat',
+        'createChannel',
+        data,
+      );
       if (savedChannel?.data) {
         const msg: any = { ...savedChannel.data, fakeID: channel.fakeID };
         for (const uid of data.userIds) {
@@ -148,7 +169,9 @@ export class ChatSocketService {
           const status = JSON.parse(statusStr);
           if (status.online && status.socketId) {
             this.server.to(status.socketId).emit('receiveChannel', msg);
-            console.log(`📢 Sent channel to user ${uid} at socket ${status.socketId} with ${JSON.stringify(msg)}`);
+            console.log(
+              `📢 Sent channel to user ${uid} at socket ${status.socketId} with ${JSON.stringify(msg)}`,
+            );
           }
         }
       }
@@ -157,7 +180,12 @@ export class ChatSocketService {
     }
   }
 
-  async sendMessageToChannel(message: { channelId: string; text: string; user: any; channelData?: any }) {
+  async sendMessageToChannel(message: {
+    channelId: string;
+    text: string;
+    user: any;
+    channelData?: any;
+  }) {
     const tempId = Date.now();
     const now = new Date().toISOString();
 
@@ -188,16 +216,29 @@ export class ChatSocketService {
         const status = JSON.parse(statusStr);
         if (status.online && status.socketId) {
           this.server.to(status.socketId).emit('receiveChannel', activeChannel);
-          console.log(`📢 Sent activeChannel to user ${uid} at socket ${status.socketId}`);
+          console.log(
+            `📢 Sent activeChannel to user ${uid} at socket ${status.socketId}`,
+          );
         }
       }
     }
 
     try {
-      const res: any = await this.gw.exec('chat', 'sendMessage', { ...message, send_at: now });
+      const res: any = await this.gw.exec('chat', 'sendMessage', {
+        ...message,
+        send_at: now,
+      });
+
+      //Kafka send event to notification service
+      await this.gw.exec('notification', 'send_message_notification', {
+        ...res,
+      });
 
       // ✅ Tăng unread CHO NGƯỜI KHÁC (không phải sender) – chỉ khi họ đã subscribe & không ở trong room
-      await this.incrementUnread(String(message.channelId), String(message.user.id));
+      await this.incrementUnread(
+        String(message.channelId),
+        String(message.user.id),
+      );
 
       if (res?.data) {
         const { channel, ...datas } = res.data;
@@ -225,7 +266,8 @@ export class ChatSocketService {
       if (!userId || String(userId) === String(senderId)) continue;
 
       // socket này có đăng ký theo dõi unread cho channelId không?
-      const registeredChannels = await this.getRegisteredUnreadChannels(socketId);
+      const registeredChannels =
+        await this.getRegisteredUnreadChannels(socketId);
       const isReg = registeredChannels.includes(String(channelId));
 
       // socket này có ở trong room channelId không?

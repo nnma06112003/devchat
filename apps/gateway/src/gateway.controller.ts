@@ -1,4 +1,4 @@
-import { isIn } from "class-validator";
+import { isIn } from 'class-validator';
 import {
   Body,
   Controller,
@@ -37,45 +37,60 @@ function decodeState(raw?: string): StatePayload | null {
 @Controller('api')
 export class GatewayController {
   // FE: GET /api/channels/unread-map
-  constructor(private readonly gw: GatewayService, private readonly ChatSocketService: ChatSocketService) {}
-  
+  constructor(
+    private readonly gw: GatewayService,
+    private readonly ChatSocketService: ChatSocketService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post('github-app/redirect')
-  async githubAppRedirect( @Req() req: Request) {
+  async githubAppRedirect(@Req() req: Request) {
     const user = req.user as any;
     const state = encodeState({
       next: process.env.FE_URL!,
       userId: user.id,
     });
-    const result : any = await this.gw.exec('git', 'get_install_app_url', { state });
-    return {url : result.data};
+    const result: any = await this.gw.exec('git', 'get_install_app_url', {
+      state,
+    });
+    return { url: result.data };
   }
 
   @Get('github-app/setup')
-  async setup(@Query('installation_id') installationId: string,
+  async setup(
+    @Query('installation_id') installationId: string,
     @Query('setup_action') setupAction: string,
     @Query('state') state: string,
-    @Res() res: any) {
+    @Res() res: any,
+  ) {
     // Giải mã state nếu bạn encode userId/redirect
     const stateDecoded: any = decodeState(state);
     if (!stateDecoded || !stateDecoded.userId) {
       return res.redirect();
     }
-    const payload = { user: { id: stateDecoded.userId }, github_installation_id: installationId };
+    const payload = {
+      user: { id: stateDecoded.userId },
+      github_installation_id: installationId,
+    };
     await this.gw.exec('auth', 'update_profile', payload);
-    await this.gw.exec('git', 'github_app_setup', { userId: stateDecoded.userId, installationId, userToken: null });
-    const result: any = await this.gw.exec('auth', 'get_token_info', { userId: stateDecoded.userId });
+    await this.gw.exec('git', 'github_app_setup', {
+      userId: stateDecoded.userId,
+      installationId,
+      userToken: null,
+    });
+    const result: any = await this.gw.exec('auth', 'get_token_info', {
+      userId: stateDecoded.userId,
+    });
     if (result && result?.data) {
       const access_token = result.data.access_token;
       const refresh_token = result.data.refresh_token;
-      return res.redirect(`${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`);
+      return res.redirect(
+        `${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+      );
     } else {
       return res.redirect(process.env.FE_URL);
     }
   }
-
-
 
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
@@ -88,28 +103,42 @@ export class GatewayController {
   }
 
   @Get('auth/github-oauth/callback')
-  async githubOAuthCallback(@Req() req: Request, @Res() res: Response, @Query('code') code: string, @Query('state') state?: string) {
-    const safeReq = { session: (req as any).session, headers: req.headers, user: (req as any).user };
-    const result: any = await this.gw.exec('git', 'github_oauth_callback', { req: safeReq, code, state: state ?? undefined });
+  async githubOAuthCallback(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Query('code') code: string,
+    @Query('state') state?: string,
+  ) {
+    const safeReq = {
+      session: (req as any).session,
+      headers: req.headers,
+      user: (req as any).user,
+    };
+    const result: any = await this.gw.exec('git', 'github_oauth_callback', {
+      req: safeReq,
+      code,
+      state: state ?? undefined,
+    });
     if (result?.data && result.data.user) {
       const isInstall = result.data.isInstall;
       if (isInstall) {
         return res.redirect(result?.data?.nextUrl);
       } else {
-        const tokenInfo: any = await this.gw.exec('auth', 'get_token_info', { userId: result?.data?.user?.id });
+        const tokenInfo: any = await this.gw.exec('auth', 'get_token_info', {
+          userId: result?.data?.user?.id,
+        });
         if (tokenInfo && tokenInfo?.data) {
           const access_token = tokenInfo.data.access_token;
           const refresh_token = tokenInfo.data.refresh_token;
-          return res.redirect(`${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`);
+          return res.redirect(
+            `${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+          );
         } else {
           return res.redirect(`${process.env.FE_URL}`);
         }
       }
     }
   }
-
-
-
 
   // FE: POST /api/auth/login
   // Body: { email: string, password: string, otp?: string }
@@ -123,7 +152,7 @@ export class GatewayController {
   async register(@Body() dto: any) {
     return this.gw.exec('auth', 'register', dto);
   }
- @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('auth/update-profile')
   async update_profile(@Body() dto: any, @Req() req: Request) {
     // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
@@ -135,14 +164,12 @@ export class GatewayController {
   // Body: { userId: string }
   @UseGuards(JwtAuthGuard)
   @Post('auth/get-profile')
-   async get_profile(@Req() req: Request) {
+  async get_profile(@Req() req: Request) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
     // Lấy map chưa đọc từ Redis
     return this.gw.exec('auth', 'get_profile', { userId: user.id });
   }
-
-  
 
   // FE: POST /api/auth/refresh
   // Body: { refreshToken: string }
@@ -153,10 +180,10 @@ export class GatewayController {
 
   // FE: POST /api/auth/verify-token
 
-  @Post('auth/verify-token')
-  async verifyToken(@Body() dto: { token: string }) {
-    return this.gw.exec('auth', 'verify_token', dto);
-  }
+  // @Post('auth/verify-token')
+  // async verifyToken(@Body() dto: { token: string }) {
+  //   return this.gw.exec('auth', 'verify_token', dto);
+  // }
 
   @Get('auth/confirm-email')
   async confirmEmail(@Query() dto: { token: string }) {
@@ -295,17 +322,31 @@ export class GatewayController {
   // GITHUB
   @UseGuards(JwtAuthGuard)
   @Post('git/get_repo_installation')
-   async get_repo_installation(@Req() req: Request) {
+  async get_repo_installation(@Req() req: Request) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
     return this.gw.exec('git', 'get_repo_installation', { userId: user.id });
   }
 
-    @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('git/get_repo_data_by_url')
-   async get_repo_data_by_url(@Body() dto: any, @Req() req: Request) {
+  async get_repo_data_by_url(@Body() dto: any, @Req() req: Request) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
-      return this.gw.exec('git', 'get_repo_data_by_url', { userId: user.id, url: dto.url, ...dto });
+    return this.gw.exec('git', 'get_repo_data_by_url', {
+      userId: user.id,
+      url: dto.url,
+      ...dto,
+    });
+  }
+
+  @Post('webhook/events')
+  handleWebhook(@Body() event: any, @Res() res: Response) {
+    console.log('Webhook đã nhận được:', event);
+  }
+
+  @Get('health')
+  healthCheck() {
+    return { status: 'ok' };
   }
 }

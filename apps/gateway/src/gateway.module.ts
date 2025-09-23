@@ -9,8 +9,8 @@ import { ChatGateway } from './chat.gateway';
 import { ChatSocketService } from './socket.service';
 import { RedisProvider } from './redis/redis.provider';
 
-const SERVICES = ['auth', 'chat','upload','git']; // mở rộng dễ dàng: search, file, notification...
-const TOPICS = SERVICES.map(s => `svc.${s}.exec`);
+const SERVICES = ['auth', 'chat', 'upload', 'git', 'notification']; // mở rộng dễ dàng: search, file, notification...
+const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
 
 @Module({
   imports: [
@@ -30,10 +30,10 @@ const TOPICS = SERVICES.map(s => `svc.${s}.exec`);
           },
           consumer: { groupId: 'gateway-consumer' },
           producer: {
-        // Chọn 1 trong 2:
-        // createPartitioner: Partitioners.LegacyPartitioner,
-        createPartitioner: Partitioners.JavaCompatiblePartitioner,
-      },
+            // Chọn 1 trong 2:
+            // createPartitioner: Partitioners.LegacyPartitioner,
+            createPartitioner: Partitioners.JavaCompatiblePartitioner,
+          },
         },
       },
     ]),
