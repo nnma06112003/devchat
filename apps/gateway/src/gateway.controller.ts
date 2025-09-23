@@ -227,13 +227,22 @@ export class GatewayController {
   // FE: POST /api/channels/:channelId/messages
   // Body: { text: string, snippetId?: string }
   // Param: channelId: string
+  // @UseGuards(JwtAuthGuard)
+  // @Post('channels/send-messages')
+  // async sendMessage(@Body() dto: any, @Req() req: Request) {
+  //   // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
+  //   const user = req.user as any;
+  //   const payload = { user, ...dto };
+  //   return this.gw.exec('chat', 'sendMessage', payload);
+  // }
+
   @UseGuards(JwtAuthGuard)
-  @Post('channels/send-messages')
-  async sendMessage(@Body() dto: any, @Req() req: Request) {
+  @Post('channels/add-repositories')
+  async addRepositoriesToChannel(@Body() dto: any, @Req() req: Request) {
     // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
     const user = req.user as any;
     const payload = { user, ...dto };
-    return this.gw.exec('chat', 'sendMessage', payload);
+    return this.gw.exec('chat', 'addRepositoriesToChannel', payload);
   }
 
   // FE: GET /api/channels/:channelId/messages
@@ -339,14 +348,26 @@ export class GatewayController {
       ...dto,
     });
   }
-
-  @Post('webhook/events')
-  handleWebhook(@Body() event: any, @Res() res: Response) {
-    console.log('Webhook đã nhận được:', event);
-  }
-
-  @Get('health')
-  healthCheck() {
-    return { status: 'ok' };
+  @UseGuards(JwtAuthGuard)
+  @Post('git/get_list_repo_data_by_channel')
+  async get_list_repo_data_by_channel(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+    const result = await this.gw.exec('chat', 'listRepositoriesByChannel', {
+      user,
+      ...dto,
+    });
+    //return result;
+    if (result && result.data) {
+      if (Array.isArray(result.data.items) && result.data.items.length > 0) {
+        return this.gw.exec('git', 'get_repo_by_ids', {
+          items: result.data.items,
+        });
+      } else {
+        return { code: 200, msg: 'Success', data: [] };
+      }
+    } else {
+      return { code: 404, msg: 'Not Found', data: null };
+    }
   }
 }

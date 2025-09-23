@@ -227,7 +227,8 @@ async createInstallationAccessToken(installationId: number): Promise<any> {
 private async fetchFromGithubEndpoint(
   userId: number,
   endpoint: string,
-  params: Record<string, any> = {}
+  params: Record<string, any> = {},
+  method: string = 'GET' // Thêm phương thức để hỗ trợ GET/POST
 ) {
   const user = await this.userRepo.findOne({ where: { id: userId } });
   if (!user) throw new RpcCustomException("User not found", 404);
@@ -239,18 +240,30 @@ private async fetchFromGithubEndpoint(
   const url = new URL(`https://api.github.com/${endpoint}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
 
-  const res = await fetch(url, {
+  // Set up the fetch options
+  const fetchOptions: RequestInit = {
+    method: method,  // `GET`, `POST`, `PUT`, ...
     headers: {
       Authorization: `Bearer ${iatRes.token}`,
       Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",  // Chỉ cần nếu bạn gửi JSON body
     },
-  });
+  };
+
+  // Nếu là POST/PUT, cần thêm body
+  if (method === 'POST' || method === 'PUT') {
+    fetchOptions.body = JSON.stringify(params);  // Chuyển params thành JSON
+  }
+
+  const res = await fetch(url.toString(), fetchOptions);
 
   if (!res.ok) {
     throw new RpcCustomException(`GitHub API failed: ${res.statusText}`, res.status);
   }
+
   return res.json();
 }
+
 
 // === Dùng url trực tiếp từ repo JSON ===
 private async fetchFromGithubUrl(
@@ -258,11 +271,16 @@ private async fetchFromGithubUrl(
   rawUrl: string,
   params: Record<string, any> = {}
 ) {
-  const user = await this.userRepo.findOne({ where: { id: userId } });
-  if (!user) throw new RpcCustomException("User not found", 404);
+  let installation_id: number | null = null;// Đây là userid của người dùng chứ không phải installation_id
+  const user = await this.userRepo.findOne({ where: { id: (params.installation_id || userId) } });
+    if (!user) throw new RpcCustomException("User not found", 404);
+    installation_id = Number(user?.github_installation_id || 0);
+    if (!installation_id) {
+      throw new RpcCustomException("User has no installation_id", 400);
+    }
 
   const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(
-    Number(user.github_installation_id)
+    Number(installation_id)
   );
 
   // Xóa template {...} trong url (ví dụ commits{/sha} -> commits)
@@ -293,6 +311,31 @@ async listInstallationRepos(userId: number, page = 1, perPage = 50) {
   });
 }
 
+  
+async getMultipleReposInfo(
+  items: { repo_id: string; user_id: number }[],
+) {
+  try {
+    // Tạo mảng promise
+    const promises = items.map(item => {
+      // Giả sử endpoint repo API dùng rawUrl dựa trên repo_id
+      const rawUrl = `https://api.github.com/repositories/${item.repo_id}`;
+      return this.fetchFromGithubUrl(item.user_id, rawUrl);
+    });
+
+    // Chạy đồng thời với Promise.all
+    const allData = await Promise.all(promises);
+
+    // Ghép kết quả với repo_id và user_id
+    return allData.map((data, index) => ({
+      repo_id: items[index].repo_id,
+      user_id: items[index].user_id,
+      repo_info: data
+    }));
+  } catch (error) {
+    throw new RpcCustomException("Không load được thông tin nhiều repo", 404);
+  }
+}
 // Load bất kỳ theo url GitHub API có sẵn
 async loadFromRepoLink(userId: number, url: string, params?: Record<string, any>) {
   return this.fetchFromGithubUrl(userId, url, params);
