@@ -4,30 +4,26 @@
     "target": "es2019",
     "module": "Node16",
     "moduleResolution": "node16",
-
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictPropertyInitialization": false,
-
     "removeComments": true,
     "declaration": false,
     "sourceMap": true,
     "outDir": "./dist",
     "incremental": true,
-
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "baseUrl": "./",
-
     "paths": {
       "@myorg/entities": ["libs/entities/src"],
       "@myorg/database": ["libs/database/src"],
-      "@myorg/common": ["libs/common/src"]
+      "@myorg/common": ["libs/common/src"],
+      "@myorg/schemas": ["libs/schemas/src"]
     }
   },
   "exclude": ["node_modules", "dist"]
