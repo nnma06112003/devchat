@@ -663,7 +663,7 @@ export class ChatService extends BaseService<Message | Channel> {
   ) {
     // 1. Kiểm tra danh sách repo_id hợp lệ
     if (!Array.isArray(repoIds) || repoIds.length === 0) {
-      throw new RpcException({ msg: 'Danh sách repo_id không hợp lệ', status: 400 });
+      throw new RpcException({ msg: 'Danh sách Repository không hợp lệ', status: 400 });
     }
 
     // 2. Kiểm tra user tồn tại và đã có installation_id
@@ -696,7 +696,7 @@ export class ChatService extends BaseService<Message | Channel> {
         relations: ['channels'],
       });
       if (repo && repo.channels?.some((c) => String(c.id) === String(channel.id))) {
-        throw new RpcException({ msg: `Bạn đã thêm repo ${rpid} vào channel này rồi`, status: 400 });
+        throw new RpcException({ msg: `Không được thêm trùng Repository`, status: 400 });
       }
     }
 
