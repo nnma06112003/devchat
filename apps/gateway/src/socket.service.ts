@@ -184,16 +184,18 @@ export class ChatSocketService {
     channelId: string;
     text: string;
     user: any;
+    type?: string;
     channelData?: any;
   }) {
     const tempId = Date.now();
     const now = new Date().toISOString();
-
+    const typeMsg = message.type ?? 'message';
     // Emit pending vào room
     const pendingMsg: any = {
       id: tempId,
       fakeID: tempId,
       text: message.text,
+      type: typeMsg,
       created_at: now,
       updated_at: null,
       sender: {
@@ -230,9 +232,9 @@ export class ChatSocketService {
       });
 
       //Kafka send event to notification service
-      await this.gw.exec('notification', 'send_message_notification', {
-        ...res,
-      });
+      // await this.gw.exec('notification', 'send_message_notification', {
+      //   ...res,
+      // });
 
       // ✅ Tăng unread CHO NGƯỜI KHÁC (không phải sender) – chỉ khi họ đã subscribe & không ở trong room
       await this.incrementUnread(

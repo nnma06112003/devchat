@@ -12,10 +12,19 @@ import { Channel } from './channel.entity';
 import { User } from './user.entity';
 import { Attachment } from './attachment.entity';
 
+
+
 @Entity('messages')
 export class Message {
   @PrimaryGeneratedColumn()
   id: number | string;
+
+  @Column({
+    type: 'enum',
+    enum: ['message', 'notification', 'system'],
+    default: 'message',
+  })
+  type: string;
 
   @Column('text', { nullable: true })
   text: string;
@@ -39,4 +48,5 @@ export class Message {
 
   @UpdateDateColumn()
   updated_at: Date;
+
 }
