@@ -11,9 +11,7 @@ import { User } from '@myorg/entities';
 import { GithubStrategy } from './strategies/github.strategy';
 import { DatabaseModule } from '@myorg/database';
 import { MailerModule } from '@nestjs-modules/mailer';
-import { Transport } from '@nestjs/microservices';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
-import { strict } from 'assert';
 import path from 'path';
 
 @Module({
@@ -24,8 +22,8 @@ import path from 'path';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET'),
-        signOptions: { expiresIn: '5m' },
+        secret: configService.get('ACCESS_SECRET_KEY') || 'nguyenthaibinhduongdevchatappaccess',
+        signOptions: { expiresIn: '15s' },
       }),
     }),
 

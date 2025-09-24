@@ -2,16 +2,12 @@
 
 import {
   Injectable,
-  UnauthorizedException,
-  ConflictException,
 } from '@nestjs/common';
-import axios from 'axios';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UserRepository } from './repositories/user.repository';
 import { RegisterDto, LoginDto } from 'apps/auth/src/dto/auth.dto';
 import { JwtPayload } from 'apps/auth/src/interfaces/auth.interface';
-import { RpcCustomException } from '@myorg/common';
 import { RpcException } from '@nestjs/microservices';
 import { User } from '@myorg/entities';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -233,7 +229,10 @@ export class AuthService {
   private async generateAndSaverefresh_token(user: any): Promise<string> {
     const refresh_token = this.jwtService.sign(
       { sub: user.id },
-      { expiresIn: '7d' },
+      {
+        expiresIn: '7d',
+        secret: process.env.REFRESH_SECRET_KEY || 'nguyenthaibinhduongdevchatapprefresh',
+      }
     );
     user.refresh_token = refresh_token;
     await this.userRepository.save(user);
@@ -242,10 +241,13 @@ export class AuthService {
 
   // Refresh token
   async refreshToken(refresh_token: string): Promise<any> {
-    const user: any =
-      await this.userRepository.findByrefresh_token(refresh_token);
+    const payload: any = this.jwtService.verify(refresh_token,
+      { secret: process.env.REFRESH_SECRET_KEY || 'nguyenthaibinhduongdevchatapprefresh' });
+    const user: any = await this.userRepository.findById(payload.sub);
+    console.log('user id:', payload.sub);
+    console.log('user:', user);
 
-    if (!user) {
+    if (!user || user.refresh_token !== refresh_token) {
       throw new RpcException({
         msg: 'Refresh token không hợp lệ',
         status: 401,
@@ -253,7 +255,7 @@ export class AuthService {
     }
 
     // 2. Tạo access_token mới
-    const payload: JwtPayload = {
+    const payloadData: JwtPayload = {
       sub: user.id,
       email: user.email,
       username: user.username,
@@ -262,11 +264,14 @@ export class AuthService {
       github_installation_id: user.github_installation_id || null
     };
 
-    const access_token = this.jwtService.sign(payload);
+    console.log('payload:', payloadData);
+
+    const access_token = this.jwtService.sign(payloadData);
     const new_refresh_token = await this.generateAndSaverefresh_token(user);
 
     // 4. Trả về token mới
     return {
+      
       access_token: access_token ?? null,
       refresh_token: new_refresh_token ?? null,
     };
