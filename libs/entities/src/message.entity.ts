@@ -21,7 +21,7 @@ export class Message {
 
   @Column({
     type: 'enum',
-    enum: ['message', 'notification', 'system'],
+    enum: ['message', 'notification', 'system','code-share','file-upload','code-card'],
     default: 'message',
   })
   type: string;
@@ -36,6 +36,9 @@ export class Message {
 
   @ManyToOne(() => User, { nullable: false, onDelete: 'SET NULL' })
   sender: User;
+
+  @Column({ type: 'jsonb', nullable: true })
+  json_data?: any;
 
   @OneToMany(() => Attachment, (a) => a.message, { cascade: true })
   attachments: Attachment[];

@@ -4,6 +4,7 @@ import { Server, Socket } from 'socket.io';
 import Redis from 'ioredis';
 import { GatewayService } from './gateway.service';
 import { Message } from '@myorg/entities';
+import { json } from 'stream/consumers';
 
 export type AuthSocket = Socket & { user?: { id: string } };
 
@@ -186,6 +187,7 @@ export class ChatSocketService {
     user: any;
     type?: string;
     channelData?: any;
+    json_data?: any;
   }) {
     const tempId = Date.now();
     const now = new Date().toISOString();
@@ -198,6 +200,7 @@ export class ChatSocketService {
       type: typeMsg,
       created_at: now,
       updated_at: null,
+      json_data: message.json_data  ? { ...message.json_data  } : null,
       sender: {
         id: message.user.id,
         username: message.user.username,
