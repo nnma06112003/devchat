@@ -53,6 +53,13 @@ export class ChatController {
           payload.data.channel_id,
           payload.data,
         );
+      
+      case 'removeRepositoriesFromChannel':
+        return await this.chatService.removeRepositoryFromChannel(
+          payload.data.user.id,
+          payload.data.channel_id,
+          payload.data.repository_id,
+        );
       default:
         return { error: 'Unknown command' };
     }

@@ -8,7 +8,7 @@ import { RpcException } from '@nestjs/microservices';
 import { Repository as RepoEntity } from '@myorg/entities'; // Đảm bảo import đúng entity Repository
 
 @Injectable()
-export class ChatService extends BaseService<Message | Channel> {
+export class ChatService extends BaseService<Message> {
   /**
    * Tham gia kênh chat
    * @param user user hiện tại
@@ -777,6 +777,48 @@ export class ChatService extends BaseService<Message | Channel> {
         user_id: repo.user?.id || null,
       })),
     };
+  }
+
+  async removeRepositoryFromChannel(
+    userId: string | number,
+    channelId: string | number,
+    repoId: string | number
+  ) {
+    // 1. Kiểm tra user tồn tại
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new RpcException({ msg: 'Không tìm thấy user', status: 404 });
+
+    // 2. Kiểm tra channel tồn tại và user là thành viên
+    const channel = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['users', 'repositories', 'owner'],
+    });
+    if (!channel) throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    const isMember = channel.users.some((u) => String(u.id) === String(userId));
+    if (!isMember) throw new RpcException({ msg: 'Bạn không phải thành viên của kênh này', status: 403 });
+
+    // 3. Kiểm tra repo tồn tại trong channel
+    const repoRepo = this.attachmentRepo.manager.getRepository(RepoEntity);
+    const repo = await repoRepo.findOne({
+      where: { repo_id: String(repoId) },
+      relations: ['channels', 'user'],
+    });
+    if (!repo || !repo.channels.some((c) => String(c.id) === String(channelId))) {
+      throw new RpcException({ msg: 'Repository không tồn tại trong kênh này', status: 404 });
+    }
+
+    // 4. Kiểm tra quyền xóa: user là chủ repo hoặc owner channel
+    const isRepoOwner = String(repo.user.id) === String(userId);
+    const isChannelOwner = channel.owner && String(channel.owner.id) === String(userId);
+    if (!isRepoOwner && !isChannelOwner) {
+      throw new RpcException({ msg: 'Bạn không có quyền xóa repository này khỏi kênh', status: 403 });
+    }
+
+    // 5. Xóa liên kết repo khỏi channel
+    repo.channels = repo.channels.filter((c) => String(c.id) !== String(channelId));
+    await repoRepo.save(repo);
+
+    return { msg: 'Đã xóa repository khỏi kênh', repo_id: repoId, channel_id: channelId };
   }
 
 }

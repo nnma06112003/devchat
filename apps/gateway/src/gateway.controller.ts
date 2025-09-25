@@ -245,6 +245,15 @@ export class GatewayController {
     return this.gw.exec('chat', 'addRepositoriesToChannel', payload);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('channels/remove-repositories')
+  async removeRepositoriesFromChannel(@Body() dto: any, @Req() req: Request) {
+    // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'removeRepositoriesFromChannel', payload);
+  }
+
   // FE: GET /api/channels/:channelId/messages
   // Param: channelId: string
   // Query: { cursor?: string }

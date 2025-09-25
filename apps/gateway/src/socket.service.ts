@@ -4,6 +4,7 @@ import { Server, Socket } from 'socket.io';
 import Redis from 'ioredis';
 import { GatewayService } from './gateway.service';
 import { Message } from '@myorg/entities';
+import { json } from 'stream/consumers';
 
 export type AuthSocket = Socket & { user?: { id: string } };
 
@@ -184,18 +185,22 @@ export class ChatSocketService {
     channelId: string;
     text: string;
     user: any;
+    type?: string;
     channelData?: any;
+    json_data?: any;
   }) {
     const tempId = Date.now();
     const now = new Date().toISOString();
-
+    const typeMsg = message.type ?? 'message';
     // Emit pending vào room
     const pendingMsg: any = {
       id: tempId,
       fakeID: tempId,
       text: message.text,
+      type: typeMsg,
       created_at: now,
       updated_at: null,
+      json_data: message.json_data  ? { ...message.json_data  } : null,
       sender: {
         id: message.user.id,
         username: message.user.username,
@@ -230,9 +235,9 @@ export class ChatSocketService {
       });
 
       //Kafka send event to notification service
-      await this.gw.exec('notification', 'send_message_notification', {
-        ...res,
-      });
+      // await this.gw.exec('notification', 'send_message_notification', {
+      //   ...res,
+      // });
 
       // ✅ Tăng unread CHO NGƯỜI KHÁC (không phải sender) – chỉ khi họ đã subscribe & không ở trong room
       await this.incrementUnread(

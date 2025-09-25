@@ -12,10 +12,19 @@ import { Channel } from './channel.entity';
 import { User } from './user.entity';
 import { Attachment } from './attachment.entity';
 
+
+
 @Entity('messages')
 export class Message {
   @PrimaryGeneratedColumn()
   id: number | string;
+
+  @Column({
+    type: 'enum',
+    enum: ['message', 'notification', 'system','code-share','file-upload','code-card'],
+    default: 'message',
+  })
+  type: string;
 
   @Column('text', { nullable: true })
   text: string;
@@ -28,6 +37,9 @@ export class Message {
   @ManyToOne(() => User, { nullable: false, onDelete: 'SET NULL' })
   sender: User;
 
+  @Column({ type: 'jsonb', nullable: true })
+  json_data?: any;
+
   @OneToMany(() => Attachment, (a) => a.message, { cascade: true })
   attachments: Attachment[];
 
@@ -39,4 +51,5 @@ export class Message {
 
   @UpdateDateColumn()
   updated_at: Date;
+
 }
