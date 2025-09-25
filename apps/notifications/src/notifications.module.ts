@@ -8,6 +8,7 @@ import { Notification, NotificationSchema } from '@myorg/schemas';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Channel } from '@myorg/entities';
 import { DatabaseModule } from '@myorg/database';
+import { KafkaPublisher } from './kafka-publisher';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { DatabaseModule } from '@myorg/database';
         transport: Transport.KAFKA,
         options: {
           client: {
-            brokers: ['localhost:9092'],
+            brokers: ['localhost:29092'],
           },
           consumer: {
             groupId: 'notification-consumer',
@@ -47,6 +48,6 @@ import { DatabaseModule } from '@myorg/database';
     ]),
   ],
   controllers: [NotificationController],
-  providers: [NotificationService],
+  providers: [NotificationService, KafkaPublisher],
 })
 export class NotificationModule {}

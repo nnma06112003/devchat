@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Channel } from '@myorg/entities';
 import { get } from 'axios';
+import { KafkaPublisher } from './kafka-publisher';
 
 @Injectable()
 export class NotificationService {
@@ -16,6 +17,7 @@ export class NotificationService {
     private notificationModel: Model<NotificationDocument>,
     @InjectRepository(Channel)
     private channelRepository: Repository<Channel>,
+    private readonly kafkaPublisher: KafkaPublisher, // thêm helper
   ) {}
 
   //Helpers
@@ -55,6 +57,18 @@ export class NotificationService {
         console.log('Notification created:', notification);
 
         await notification.save();
+
+        // 🔥 Publish event vào Kafka cho Gateway
+        await this.kafkaPublisher.publish('notification.events', {
+          userId: member.id,
+          type: data.channel.type,
+          data,
+          createdAt: notification.createdAt,
+        });
+
+        this.logger.log(
+          `Notification created & published for user ${member.id}`,
+        );
       }
     } catch (error: any) {
       this.logger.error(
