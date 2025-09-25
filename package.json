@@ -30,7 +30,10 @@
     "build:database": "nest build database",
     "build:common": "nest build common",
     "build:all": "yarn build:entities && yarn build:database && yarn build:common && yarn build:auth && yarn build:chat && yarn build:gateway",
-    "db:seed": "ts-node -r tsconfig-paths/register libs/database/src/seeds/seed.ts"
+    "db:seed": "ts-node -r tsconfig-paths/register libs/database/src/seeds/seed.ts",
+    "db:reset": "docker stop devchat-postgres-1 && docker rm devchat-postgres-1 && docker volume rm devchat_postgres_data && docker compose up -d && yarn db:seed",
+    "up":"docker compose up -d",
+    "down":"docker compose down"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.884.0",
