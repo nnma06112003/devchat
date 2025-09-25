@@ -14,8 +14,7 @@ export class NotificationController {
     const { cmd, data } = message || {};
     switch (cmd) {
       case 'send_message_notification':
-        console.log('send_message_notification', data);
-      // return this.notificationService.createNotification(data);
+        return this.notificationService.createNotification(data.data);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }
