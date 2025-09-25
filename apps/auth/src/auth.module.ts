@@ -23,7 +23,7 @@ import path from 'path';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get('ACCESS_SECRET_KEY') || 'nguyenthaibinhduongdevchatappaccess',
-        signOptions: { expiresIn: '15s' },
+        signOptions: { expiresIn: '5m' },
       }),
     }),
 
