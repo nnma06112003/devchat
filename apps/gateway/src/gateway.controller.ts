@@ -379,4 +379,14 @@ export class GatewayController {
       return { code: 404, msg: 'Not Found', data: null };
     }
   }
+
+  //Notification
+  @UseGuards(JwtAuthGuard)
+  @Get('notifications')
+  async getNotifications(@Req() req: Request) {
+    const user = req.user as any;
+    return this.gw.exec('notification', 'get_notifications', {
+      userId: user.id,
+    });
+  }
 }

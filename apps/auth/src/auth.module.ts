@@ -22,8 +22,10 @@ import path from 'path';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get('ACCESS_SECRET_KEY') || 'nguyenthaibinhduongdevchatappaccess',
-        signOptions: { expiresIn: '5m' },
+        secret:
+          configService.get('ACCESS_SECRET_KEY') ||
+          'nguyenthaibinhduongdevchatappaccess',
+        signOptions: { expiresIn: '24h' },
       }),
     }),
 
