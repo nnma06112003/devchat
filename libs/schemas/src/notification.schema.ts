@@ -17,8 +17,13 @@ export class Notification {
   @Prop({ default: false })
   read: boolean;
 
-  @Prop({ default: Date.now })
+  @Prop({ type: Date, default: Date.now })
   createdAt: Date;
 }
 
-export const NotificationSchema = SchemaFactory.createForClass(Notification);
+export const NotificationSchema = SchemaFactory.createForClass(
+  Notification,
+).index({
+  userId: 1,
+  createdAt: -1,
+});

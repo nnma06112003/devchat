@@ -39,13 +39,9 @@ export class NotificationService {
       const channelId = data?.channel?.id;
       const senderId = data?.sender?.id;
 
-      console.log('channelId, senderId', channelId, senderId);
-
       const members = (await this.getChannelMembers(channelId)).filter(
         (m) => m.id !== String(senderId),
       );
-
-      console.log('members', members);
 
       for (const member of members) {
         const notification = new this.notificationModel({
@@ -55,6 +51,9 @@ export class NotificationService {
           read: false,
           createdAt: new Date(),
         });
+
+        console.log('Notification created:', notification);
+
         await notification.save();
       }
     } catch (error: any) {
