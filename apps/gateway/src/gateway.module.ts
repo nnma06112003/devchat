@@ -43,7 +43,7 @@ const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
       store: redisStore,
       host: 'localhost', // hoặc host Redis của bạn
       port: 6379,
-      ttl: 60, // thời gian cache (giây)
+      ttl: 20 * 1000, // thời gian cache (ms)
     })
   ],
   controllers: [GatewayController],

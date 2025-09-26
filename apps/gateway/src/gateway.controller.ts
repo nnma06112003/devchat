@@ -384,7 +384,6 @@ async get_repo_installation(@Req() req: Request) {
     if (cached) {
       return cached;
     }
-
     const result = await this.gw.exec('chat', 'listRepositoriesByChannel', {
       user,
       ...dto,
@@ -396,16 +395,16 @@ async get_repo_installation(@Req() req: Request) {
           items: result.data.items,
         });
         // Lưu cache
-        await this.cacheManager.set(cacheKey, data); // TTL 60s
+        await this.cacheManager.set(cacheKey, data); 
         return data;
       } else {
         const data = { code: 200, msg: 'Success', data: [] };
-        await this.cacheManager.set(cacheKey, data);
+        await this.cacheManager.set(cacheKey, data); 
         return data;
       }
     } else {
       const data = { code: 404, msg: 'Not Found', data: null };
-      await this.cacheManager.set(cacheKey, data);
+      await this.cacheManager.set(cacheKey, data); 
       return data;
     }
   }
