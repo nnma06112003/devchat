@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Notification, NotificationDocument } from '@myorg/schemas';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Channel } from '@myorg/entities';
+import { get } from 'axios';
 
 @Injectable()
 export class NotificationService {
@@ -10,28 +14,48 @@ export class NotificationService {
   constructor(
     @InjectModel(Notification.name)
     private notificationModel: Model<NotificationDocument>,
+    @InjectRepository(Channel)
+    private channelRepository: Repository<Channel>,
   ) {}
 
-  // Tạo notification mới
-  async createNotification(notificationData: {
-    userId: string;
-    type: string;
-    data: Record<string, any>;
-  }): Promise<Notification> {
-    try {
-      const newNotification = new this.notificationModel({
-        userId: notificationData.userId,
-        type: notificationData.type,
-        data: notificationData.data,
-        read: false,
-        createdAt: new Date(),
-      });
+  //Helpers
 
-      const savedNotification = await newNotification.save();
-      this.logger.log(
-        `Created notification for user ${notificationData.userId}, ID: ${savedNotification._id}`,
+  private async getChannelMembers(channelId: string | number) {
+    if (!channelId) return [];
+    const channel = await this.channelRepository.findOne({
+      where: { id: channelId as any },
+      relations: ['users'],
+    });
+    return (channel?.users || []).map((u) => ({
+      id: String(u.id),
+      username: (u as any).username,
+      email: (u as any).email,
+    }));
+  }
+
+  // Tạo notification mới
+  async createNotification(data: any): Promise<void> {
+    try {
+      const channelId = data?.channel?.id;
+      const senderId = data?.sender?.id;
+
+      const members = (await this.getChannelMembers(channelId)).filter(
+        (m) => m.id !== String(senderId),
       );
-      return savedNotification;
+
+      for (const member of members) {
+        const notification = new this.notificationModel({
+          userId: member.id,
+          type: data.channel.type,
+          data: data,
+          read: false,
+          createdAt: new Date(),
+        });
+
+        console.log('Notification created:', notification);
+
+        await notification.save();
+      }
     } catch (error: any) {
       this.logger.error(
         `Error creating notification: ${error.message}`,

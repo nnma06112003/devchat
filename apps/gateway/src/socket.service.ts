@@ -200,7 +200,7 @@ export class ChatSocketService {
       type: typeMsg,
       created_at: now,
       updated_at: null,
-      json_data: message.json_data  ? { ...message.json_data  } : null,
+      json_data: message.json_data ? { ...message.json_data } : null,
       sender: {
         id: message.user.id,
         username: message.user.username,
@@ -235,9 +235,9 @@ export class ChatSocketService {
       });
 
       //Kafka send event to notification service
-      // await this.gw.exec('notification', 'send_message_notification', {
-      //   ...res,
-      // });
+      await this.gw.exec('notification', 'send_message_notification', {
+        ...res,
+      });
 
       // ✅ Tăng unread CHO NGƯỜI KHÁC (không phải sender) – chỉ khi họ đã subscribe & không ở trong room
       await this.incrementUnread(

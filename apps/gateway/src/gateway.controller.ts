@@ -409,4 +409,14 @@ async get_repo_installation(@Req() req: Request) {
       return data;
     }
   }
+
+  //Notification
+  @UseGuards(JwtAuthGuard)
+  @Get('notifications')
+  async getNotifications(@Req() req: Request) {
+    const user = req.user as any;
+    return this.gw.exec('notification', 'get_notifications', {
+      userId: user.id,
+    });
+  }
 }
