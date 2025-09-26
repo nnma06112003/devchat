@@ -4,6 +4,7 @@ setlocal EnableExtensions
 
 set "Workspace=D:\Minara\devchat"
 set "WorkspaceFE=D:\project\realtime-dev-chatapp"
+set "WorkspaceHostDoamin=C:\Users\natte"
 
 REM === Vào thư mục backend ===
 cd /d "%Workspace%"
@@ -17,7 +18,8 @@ if %errorlevel%==0 (
     new-tab --title "chat"      cmd /k "cd /d %Workspace% && yarn dev:chat" ^; ^
     new-tab --title "github"    cmd /k "cd /d %Workspace% && yarn dev:github" ^; ^
     new-tab --title "upload"    cmd /k "cd /d %Workspace% && yarn dev:upload" ^; ^
-    new-tab --title "frontend"  cmd /k "cd /d %WorkspaceFE% && yarn dev"
+    new-tab --title "frontend"  cmd /k "cd /d %WorkspaceFE% && yarn dev"^; ^
+    new-tab --title "domain"  cmd /k "cd /d %WorkspaceHostDoamin% && cloudflared tunnel run my-new-tunnel"
 ) else (
   start "gateway"   cmd /k "cd /d %Workspace% && yarn dev:gateway || pause"
   start "auth"      cmd /k "cd /d %Workspace% && yarn dev:auth || pause"
@@ -25,6 +27,7 @@ if %errorlevel%==0 (
   start "github"    cmd /k "cd /d %Workspace% && yarn dev:github || pause"
   start "upload"    cmd /k "cd /d %Workspace% && yarn dev:upload || pause"
   start "frontend"  cmd /k "cd /d %WorkspaceFE% && yarn dev || pause"
+  start "domain"    cmd /k "cd /d %WorkspaceHostDoamin% && cloudflared tunnel run my-new-tunnel || pause"
 )
 
 endlocal

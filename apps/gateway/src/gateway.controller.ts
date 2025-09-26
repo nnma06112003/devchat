@@ -1,4 +1,3 @@
-import { isIn } from 'class-validator';
 import {
   Body,
   Controller,
@@ -9,13 +8,14 @@ import {
   UseGuards,
   Req,
   Res,
+  Inject
 } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Request, Response } from 'express';
 import { ChatSocketService } from './socket.service';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { log } from 'console';
+import { Cache } from 'cache-manager';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 type StatePayload = { next: string; userId: string | number };
 
@@ -40,6 +40,7 @@ export class GatewayController {
   constructor(
     private readonly gw: GatewayService,
     private readonly ChatSocketService: ChatSocketService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -339,12 +340,25 @@ export class GatewayController {
 
   // GITHUB
   @UseGuards(JwtAuthGuard)
-  @Post('git/get_repo_installation')
-  async get_repo_installation(@Req() req: Request) {
-    const user = req.user as any;
-    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
-    return this.gw.exec('git', 'get_repo_installation', { userId: user.id });
+@Post('git/get_repo_installation')
+async get_repo_installation(@Req() req: Request) {
+  const user = req.user as any;
+  if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+  // Tạo cache key duy nhất theo user
+  const cacheKey = `repo_installation:${user.id}`;
+  const cached = await this.cacheManager.get(cacheKey);
+  if (cached) {
+    return cached;
   }
+
+  const result = await this.gw.exec('git', 'get_repo_installation', { userId: user.id });
+
+  // Lưu cache với TTL 60 giây
+  await this.cacheManager.set(cacheKey, result);
+
+  return result;
+}
 
   @UseGuards(JwtAuthGuard)
   @Post('git/get_repo_data_by_url')
@@ -357,26 +371,42 @@ export class GatewayController {
       ...dto,
     });
   }
+
   @UseGuards(JwtAuthGuard)
   @Post('git/get_list_repo_data_by_channel')
   async get_list_repo_data_by_channel(@Body() dto: any, @Req() req: Request) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+    // Tạo cache key duy nhất theo user và dto
+    const cacheKey = `repo_data_by_channel:${user.id}:${JSON.stringify(dto)}`;
+    const cached = await this.cacheManager.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const result = await this.gw.exec('chat', 'listRepositoriesByChannel', {
       user,
       ...dto,
     });
-    //return result;
+
     if (result && result.data) {
       if (Array.isArray(result.data.items) && result.data.items.length > 0) {
-        return this.gw.exec('git', 'get_repo_by_ids', {
+        const data = await this.gw.exec('git', 'get_repo_by_ids', {
           items: result.data.items,
         });
+        // Lưu cache
+        await this.cacheManager.set(cacheKey, data); // TTL 60s
+        return data;
       } else {
-        return { code: 200, msg: 'Success', data: [] };
+        const data = { code: 200, msg: 'Success', data: [] };
+        await this.cacheManager.set(cacheKey, data);
+        return data;
       }
     } else {
-      return { code: 404, msg: 'Not Found', data: null };
+      const data = { code: 404, msg: 'Not Found', data: null };
+      await this.cacheManager.set(cacheKey, data);
+      return data;
     }
   }
 }

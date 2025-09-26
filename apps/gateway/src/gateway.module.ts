@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module  } from '@nestjs/common';
 import { Partitioners } from 'kafkajs';
 import { ConfigModule } from '@nestjs/config';
 import { GatewayController } from './gateway.controller';
@@ -8,6 +8,8 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ChatGateway } from './chat.gateway';
 import { ChatSocketService } from './socket.service';
 import { RedisProvider } from './redis/redis.provider';
+import * as redisStore from 'cache-manager-ioredis';
+import { CacheModule } from '@nestjs/cache-manager';
 
 const SERVICES = ['auth', 'chat', 'upload', 'git', 'notification']; // mở rộng dễ dàng: search, file, notification...
 const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
@@ -37,6 +39,12 @@ const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
         },
       },
     ]),
+    CacheModule.register({
+      store: redisStore,
+      host: 'localhost', // hoặc host Redis của bạn
+      port: 6379,
+      ttl: 60, // thời gian cache (giây)
+    })
   ],
   controllers: [GatewayController],
   providers: [
