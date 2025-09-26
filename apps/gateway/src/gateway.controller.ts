@@ -16,6 +16,7 @@ import { Request, Response } from 'express';
 import { ChatSocketService } from './socket.service';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+  import { createHash } from 'crypto';
 
 type StatePayload = { next: string; userId: string | number };
 
@@ -365,49 +366,71 @@ async get_repo_installation(@Req() req: Request) {
   async get_repo_data_by_url(@Body() dto: any, @Req() req: Request) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
-    return this.gw.exec('git', 'get_repo_data_by_url', {
-      userId: user.id,
-      url: dto.url,
-      ...dto,
-    });
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('git/get_list_repo_data_by_channel')
-  async get_list_repo_data_by_channel(@Body() dto: any, @Req() req: Request) {
-    const user = req.user as any;
-    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
-
-    // Tạo cache key duy nhất theo user và dto
-    const cacheKey = `repo_data_by_channel:${user.id}:${JSON.stringify(dto)}`;
+    const cacheKey = `repo_data_by_url:${user.id}:${dto.url}`;
     const cached = await this.cacheManager.get(cacheKey);
     if (cached) {
       return cached;
     }
-    const result = await this.gw.exec('chat', 'listRepositoriesByChannel', {
-      user,
+    const result = await this.gw.exec('git', 'get_repo_data_by_url', {
+      userId: user.id,
+      url: dto.url,
       ...dto,
     });
+    await this.cacheManager.set(cacheKey, result, 3 * 60 * 1000);// 3 phút
+    return result;
+  }
 
-    if (result && result.data) {
-      if (Array.isArray(result.data.items) && result.data.items.length > 0) {
-        const data = await this.gw.exec('git', 'get_repo_by_ids', {
-          items: result.data.items,
-        });
-        // Lưu cache
-        await this.cacheManager.set(cacheKey, data); 
-        return data;
-      } else {
-        const data = { code: 200, msg: 'Success', data: [] };
-        await this.cacheManager.set(cacheKey, data); 
-        return data;
-      }
-    } else {
-      const data = { code: 404, msg: 'Not Found', data: null };
-      await this.cacheManager.set(cacheKey, data); 
-      return data;
+
+
+@UseGuards(JwtAuthGuard)
+@Post('git/get_list_repo_data_by_channel')
+async get_list_repo_data_by_channel(@Body() dto: any, @Req() req: Request) {
+  const user = req.user as any;
+  if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+  // 1. Lấy danh sách repo id từ chat service
+  const result = await this.gw.exec('chat', 'listRepositoriesByChannel', {
+    user,
+    ...dto,
+  });
+
+  if (!result?.data) {
+    return { code: 404, msg: 'Not Found', data: null };
+  }
+
+  const items: string[] = result.data.items || [];
+
+  // 2. Tạo snapshot hash cho items
+  const itemsHash = createHash('sha1').update(JSON.stringify(items)).digest('hex');
+
+  const cacheKeySnapshot = `repo_snapshot:${user.id}:${JSON.stringify(dto)}`;
+  const cacheKeyData = `repo_data_by_channel:${user.id}:${JSON.stringify(dto)}`;
+
+  // 3. Kiểm tra snapshot cũ
+  const oldSnapshot = await this.cacheManager.get<string>(cacheKeySnapshot);
+
+  if (oldSnapshot && oldSnapshot === itemsHash) {
+    // Snapshot không đổi => lấy cache data
+    const cached = await this.cacheManager.get<any>(cacheKeyData);
+    if (cached) {
+      return cached;
     }
   }
+
+  // 4. Nếu snapshot khác hoặc cache trống => gọi Git
+  let data: any;
+  if (items.length > 0) {
+    data = await this.gw.exec('git', 'get_repo_by_ids', { items });
+  } else {
+    data = { code: 200, msg: 'Success', data: [] };
+  }
+
+  // 5. Cập nhật cache
+  await this.cacheManager.set(cacheKeySnapshot, itemsHash, 10 * 60 * 1000); // 10 phút
+  await this.cacheManager.set(cacheKeyData, data, 3 * 60 * 1000); // 3 phút
+
+  return data;
+}
 
   //Notification
   @UseGuards(JwtAuthGuard)

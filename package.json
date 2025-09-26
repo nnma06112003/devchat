@@ -33,7 +33,8 @@
     "db:seed": "ts-node -r tsconfig-paths/register libs/database/src/seeds/seed.ts",
     "db:reset": "docker stop devchat-postgres-1 && docker rm devchat-postgres-1 && docker volume rm devchat_postgres_data && docker compose up -d && yarn db:seed",
     "up": "docker compose up -d",
-    "down": "docker compose down"
+    "down": "docker compose down",
+    "cm": "git add . && git commit -m 'ok' && git pull && git push"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.884.0",
