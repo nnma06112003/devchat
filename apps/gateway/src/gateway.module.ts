@@ -8,6 +8,8 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ChatGateway } from './chat.gateway';
 import { ChatSocketService } from './socket.service';
 import { RedisProvider } from './redis/redis.provider';
+import * as redisStore from 'cache-manager-ioredis';
+import { CacheModule } from '@nestjs/cache-manager';
 import { NotificationsController } from './sse.controller';
 import { KafkaConsumerService } from './kafka-consumer.service';
 
@@ -16,7 +18,10 @@ const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: `.env.${process.env.NODE_ENV}`,
+    }),
     JwtModule.register({
       secret: 'dev-secret', // 2FA có thể bổ sung tại AuthService
       signOptions: { expiresIn: '1h' },
@@ -39,6 +44,12 @@ const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
         },
       },
     ]),
+    CacheModule.register({
+      store: redisStore,
+      host: 'localhost', // hoặc host Redis của bạn
+      port: 6379,
+      ttl: 20 * 1000, // thời gian cache (ms)
+    }),
   ],
   controllers: [GatewayController, NotificationsController],
   providers: [

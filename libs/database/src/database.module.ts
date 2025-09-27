@@ -24,7 +24,7 @@ export const dataSource = new DataSource(makeDataSourceOptions());
 // Xuất DatabaseModule cho Nest runtime
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true ,envFilePath: `.env.${process.env.NODE_ENV}`}),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

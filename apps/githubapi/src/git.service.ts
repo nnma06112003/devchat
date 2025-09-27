@@ -63,50 +63,107 @@ async exchangeOAuthCodeForToken(code: string) {
 }
 
 async githubOAuthCallback(req: any, code: string, state?: string) {
-  if (!code) throw new RpcCustomException('Missing code');
+  if (!code) {
+    throw new RpcCustomException('Missing code', 400);
+  }
 
   // 1) Đổi code -> OAuth App user token
   const result = await this.exchangeOAuthCodeForToken(code);
   if (!result.ok) {
-    throw new RpcCustomException(`token exchange failed: ${result.status} ${result.error}`, 400);
+    throw new RpcCustomException(
+      `token exchange failed: ${result.status} ${result.error}`,
+      400,
+    );
   }
   const userToken = result.token!;
 
-  // 2) Lấy user + email
+  // 2) Lấy GitHub user + email
   const ghUser = await this.fetchGitHubUser(userToken);
-  let email = ghUser.email ?? await this.fetchPrimaryEmail(userToken);
-  // Nếu vẫn không có email, có thể dùng noreply, hoặc bắt user bổ sung ở FE
+  let email = ghUser.email ?? (await this.fetchPrimaryEmail(userToken));
   if (!email) {
-    email = `${ghUser.id}+noreply@users.github.com`; // hoặc null nếu bạn muốn buộc bổ sung sau
+    email = `${ghUser.id}+noreply@users.github.com`; // fallback
   }
 
-  let user: any = await this.userRepo.findOne({ where: { email } });
-  if (user) {
-    const updateUser: any = await this.updateGithubUserInfoIfChanged(user.id, userToken);
-    if (updateUser.github_verified && updateUser.github_installation_id) {
-      return {
-        user: { id: updateUser.id },
-        isInstall: false,
-      }
-    }
+  // 3) Tìm user trong DB
+  let user: any = null;
+  if (state) {
+    user = await this.userRepo.findOne({ where: { id: state } });
   } else {
-    user = this.userRepo.create({
-      email,
-      username: ghUser.login ?? null,
-      role: 'user',
-      github_user_id: String(ghUser.id),
-      github_avatar: ghUser.avatar_url,
-      github_email: email,
-      github_verified: true,
-      provider: 'github',
-      provider_id: String(ghUser.id),
-    });
-    await this.userRepo.save(user);
+    user = await this.userRepo.findOne({ where: { github_email: email } });
   }
 
-  
+  // ==== CASE: USER ĐÃ TỒN TẠI ====
+  if (user) {
+    user = await this.updateGithubUserInfoIfChanged(user.id, userToken);
 
-  // 4) Lưu session tạm nếu bạn cần dùng tiếp ở setup
+    // (1) Nếu user đã verified → không cần install nữa
+    if (user.github_verified && !state) {
+      return {
+        user: { id: user.id },
+        isInstall: false,
+      };
+    }
+    if ((!user.github_installation_id && state) || (state && !user.github_verified)) {
+      const nextUrl = process.env.FE_URL!;
+      const statePayload = { next: nextUrl, userId: user.id };
+      const encoded = Buffer.from(
+        JSON.stringify(statePayload),
+        'utf8',
+      ).toString('base64url');
+      const installUrl = this.getInstallAppUrl(encoded);
+
+      return {
+        nextUrl: installUrl,
+        user: { id: user.id },
+        isInstall: true,
+      };
+    }
+
+    // (3) Nếu chưa verified + chưa có installationId + không có state → bắt cài app
+    if (!user.github_verified && !user.github_installation_id && !state) {
+      const nextUrl = process.env.FE_URL!;
+      const statePayload = { next: nextUrl, userId: user.id };
+      const encoded = Buffer.from(
+        JSON.stringify(statePayload),
+        'utf8',
+      ).toString('base64url');
+      const installUrl = this.getInstallAppUrl(encoded);
+
+      return {
+        nextUrl: installUrl,
+        user: { id: user.id },
+        isInstall: true,
+      };
+    }
+
+    // Mặc định fallback
+    return {
+      user: { id: user.id },
+      isInstall: false,
+    };
+  }
+
+  // ==== CASE: USER MỚI ====
+  user = this.userRepo.create({
+    email,
+    username: ghUser.login ?? null,
+    role: 'user',
+    github_user_id: String(ghUser.id),
+    github_avatar: ghUser.avatar_url,
+    github_email: email,
+    github_verified: true, // với user mới thì cho verified luôn
+    provider: 'github',
+    provider_id: String(ghUser.id),
+  });
+  await this.userRepo.save(user);
+
+  const nextUrl = state || process.env.FE_URL!;
+  const statePayload = { next: nextUrl, userId: user.id };
+  const encoded = Buffer.from(JSON.stringify(statePayload), 'utf8').toString(
+    'base64url',
+  );
+  const installUrl = this.getInstallAppUrl(encoded);
+
   (req as any).session = {
     user: {
       id: user.id,
@@ -116,15 +173,12 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
       githubVerified: true,
     },
   };
-  let nextUrl = state || process.env.FE_URL!;
-  if (!user.github_installation_id) {
-    const statePayload = { next: nextUrl, userId: user.id };
-    const encoded = Buffer.from(JSON.stringify(statePayload), 'utf8').toString('base64url');
-    nextUrl = this.getInstallAppUrl(encoded); // → URL install app
-    
-  }
-  return { nextUrl, user ,isInstall: true };
+
+  return { nextUrl: installUrl, user, isInstall: true };
 }
+
+
+
 
   
   
@@ -367,7 +421,7 @@ async loadFromRepoLink(userId: number, url: string, params?: Record<string, any>
 
 async githubAppSetup(userId: string, installationId: number, userToken?: string) {
 
-  const user: any = await this.userRepo.findOne({ where: { id: userId } });
+  const user: any = await this.userRepo.findOne({ where: { id: userId  } });
   if (!user) throw new RpcCustomException('User not found', 404);
   // await this.updateGithubUserInfoIfChanged(userId, userToken);
   user.github_installation_id = String(installationId);
@@ -395,7 +449,11 @@ async updateGithubUserInfoIfChanged(userId: string,userToken: string) {
     }
     if (user.github_login !== ghUser.login) {
       user.github_login = ghUser.login;
-      changed = true;
+        changed = true;
+      }
+    if (!user.github_verified) {
+        user.github_verified = true;
+        changed = true;
     }
     if (user.github_avatar !== ghUser.avatar_url) {
       user.github_avatar = ghUser.avatar_url;
