@@ -3,9 +3,12 @@ import { AppModule } from './gateway.module';
 import { ValidationPipe } from '@nestjs/common';
 import { GatewayRpcExceptionFilter } from '@myorg/common';
 import { AuthenticatedSocketIoAdapter } from './adapter/socket-io.adapter'; // thêm dòng này
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.use(cookieParser());
 
   app.useGlobalFilters(new GatewayRpcExceptionFilter());
   app.setGlobalPrefix('v1');
@@ -18,7 +21,7 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: '*',
+    origin: 'http://localhost:8080',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });

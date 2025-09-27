@@ -1,4 +1,4 @@
-import { Module  } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { Partitioners } from 'kafkajs';
 import { ConfigModule } from '@nestjs/config';
 import { GatewayController } from './gateway.controller';
@@ -10,13 +10,18 @@ import { ChatSocketService } from './socket.service';
 import { RedisProvider } from './redis/redis.provider';
 import * as redisStore from 'cache-manager-ioredis';
 import { CacheModule } from '@nestjs/cache-manager';
+import { NotificationsController } from './sse.controller';
+import { KafkaConsumerService } from './kafka-consumer.service';
 
 const SERVICES = ['auth', 'chat', 'upload', 'git', 'notification']; // mở rộng dễ dàng: search, file, notification...
 const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true ,envFilePath: `.env.${process.env.NODE_ENV}`}),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: `.env.${process.env.NODE_ENV}`,
+    }),
     JwtModule.register({
       secret: 'dev-secret', // 2FA có thể bổ sung tại AuthService
       signOptions: { expiresIn: '1h' },
@@ -44,14 +49,15 @@ const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
       host: 'localhost', // hoặc host Redis của bạn
       port: 6379,
       ttl: 20 * 1000, // thời gian cache (ms)
-    })
+    }),
   ],
-  controllers: [GatewayController],
+  controllers: [GatewayController, NotificationsController],
   providers: [
     GatewayService,
     ChatSocketService,
     ChatGateway,
     RedisProvider,
+    KafkaConsumerService,
     { provide: 'GATEWAY_TOPICS', useValue: TOPICS },
   ],
 })
