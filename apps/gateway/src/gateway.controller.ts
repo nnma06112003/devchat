@@ -55,6 +55,9 @@ export class GatewayController {
     const result: any = await this.gw.exec('git', 'get_install_app_url', {
       state,
     });
+    
+
+    
     return { url: result.data };
   }
 
@@ -101,6 +104,19 @@ export class GatewayController {
     const clientId = process.env.GITHUB_CLIENT_ID;
     const callbackUrl = process.env.GITHUB_CALLBACK_URL;
     const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}`;
+    
+    return { url };
+  }
+
+  @UseGuards(JwtAuthGuard)
+   @Post('auth/github-oauth/redirect-update')
+  async githubOAuthRedirectUpdate(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const callbackUrl = process.env.GITHUB_CALLBACK_URL;
+    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}&state=${user.id}`;
+    
     return { url };
   }
 

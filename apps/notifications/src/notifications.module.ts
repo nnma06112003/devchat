@@ -11,9 +11,7 @@ import { DatabaseModule } from '@myorg/database';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
+    ConfigModule.forRoot({ isGlobal: true ,envFilePath: `.env.${process.env.NODE_ENV}`}),
 
     ClientsModule.register([
       {

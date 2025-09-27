@@ -16,7 +16,7 @@ const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true ,envFilePath: `.env.${process.env.NODE_ENV}`}),
     JwtModule.register({
       secret: 'dev-secret', // 2FA có thể bổ sung tại AuthService
       signOptions: { expiresIn: '1h' },

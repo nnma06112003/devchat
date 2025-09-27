@@ -31,15 +31,19 @@ if %errorlevel% neq 0 (
 echo [SUCCESS] Docker va cac container da khoi dong thanh cong.
 
 REM === 3. Hoi nguoi dung co muon chay devchat khong ===
-choice /c 1n /n /m "Ban co muon chay devchat khong? (1 = Co, n = Khong): "
-if errorlevel 2 (
+choice /c 12n /n /m "Ban co muon chay devchat khong? (1 = Co - development, 2 = Co - production, n = Khong): "
+if errorlevel 3 (
   echo Khong chay devchat. Ket thuc script.
   endlocal
   exit /b 0
 )
+if errorlevel 2 (
+  echo Dang chay devchat - production...
+  call "%~dp0run_app_production.bat"
+)
 if errorlevel 1 (
-  echo Dang chay devchat ...
-  call "%~dp0run_app.bat"
+  echo Dang chay devchat - development...
+  call "%~dp0run_app_development.bat"
 )
 
 endlocal
