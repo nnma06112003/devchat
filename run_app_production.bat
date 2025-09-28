@@ -4,7 +4,7 @@ setlocal EnableExtensions
 
 set "Workspace=D:\Minara\devchat"
 set "WorkspaceFE=D:\project\realtime-dev-chatapp"
-set "WorkspaceHostDoamin=C:\Users\natte"
+set "WorkspaceHostDomain=C:\Users\natte\.cloudflared"
 
 REM === Vào thư mục backend ===
 cd /d "%Workspace%"
@@ -18,16 +18,18 @@ if %errorlevel%==0 (
     new-tab --title "chat"      cmd /k "cd /d %Workspace% && yarn prod:chat" ^; ^
     new-tab --title "github"    cmd /k "cd /d %Workspace% && yarn prod:github" ^; ^
     new-tab --title "upload"    cmd /k "cd /d %Workspace% && yarn prod:upload" ^; ^
-    new-tab --title "frontend"  cmd /k "cd /d %WorkspaceFE% && yarn dev"^; ^
-    new-tab --title "domain"  cmd /k "cd /d %WorkspaceHostDoamin% && cloudflared tunnel run my-new-tunnel"
+    new-tab --title "notification"    cmd /k "cd /d %Workspace% && yarn prod:notification" ^; ^
+    new-tab --title "frontend"  cmd /k "cd /d %WorkspaceFE% && yarn prod"
 ) else (
   start "gateway"   cmd /k "cd /d %Workspace% && yarn prod:gateway || pause"
   start "auth"      cmd /k "cd /d %Workspace% && yarn prod:auth || pause"
   start "chat"      cmd /k "cd /d %Workspace% && yarn prod:chat || pause"
   start "github"    cmd /k "cd /d %Workspace% && yarn prod:github || pause"
   start "upload"    cmd /k "cd /d %Workspace% && yarn prod:upload || pause"
+  start "notification"    cmd /k "cd /d %Workspace% && yarn prod:notification || pause"
   start "frontend"  cmd /k "cd /d %WorkspaceFE% && yarn dev || pause"
-  start "domain"    cmd /k "cd /d %WorkspaceHostDoamin% && cloudflared tunnel run my-new-tunnel || pause"
 )
 
+cd /d "%WorkspaceHostDomain%"
+call "%~dp0run-cloudflared-minimized.bat"
 endlocal

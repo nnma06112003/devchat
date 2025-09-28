@@ -25,7 +25,7 @@ import path from 'path';
         secret:
           configService.get('ACCESS_SECRET_KEY') ||
           'nguyenthaibinhduongdevchatappaccess',
-        signOptions: { expiresIn: '24h' },
+        signOptions: { expiresIn: '5m' },
       }),
     }),
 

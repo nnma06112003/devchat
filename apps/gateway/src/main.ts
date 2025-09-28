@@ -22,9 +22,9 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: 'http://localhost:8080',
+    origin: ['http://localhost:8080', 'https://thaibinhduong1802.id.vn'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true,
+    credentials: false,
   });
 
   app.use(
