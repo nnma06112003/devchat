@@ -28,6 +28,12 @@ export class AuthController {
         return this.authService.confirmEmail(data.token);
       case 'get_token_info':
         return this.authService.getTokenUserData(data.userId);
+      case 'verify_github_webhook':
+        console.log('Verifying github webhook signature:', data);
+        return this.authService.verifyWebhookSignature(
+          data.signature,
+          data.rawBody,
+        );
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }

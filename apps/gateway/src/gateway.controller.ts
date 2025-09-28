@@ -8,7 +8,7 @@ import {
   UseGuards,
   Req,
   Res,
-  Inject
+  Inject,
 } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -16,7 +16,7 @@ import { Request, Response } from 'express';
 import { ChatSocketService } from './socket.service';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-  import { createHash } from 'crypto';
+import { createHash } from 'crypto';
 
 type StatePayload = { next: string; userId: string | number };
 
@@ -55,9 +55,7 @@ export class GatewayController {
     const result: any = await this.gw.exec('git', 'get_install_app_url', {
       state,
     });
-    
 
-    
     return { url: result.data };
   }
 
@@ -97,6 +95,32 @@ export class GatewayController {
     }
   }
 
+  //github webhook
+  @Post('github-app/webhook')
+  async githubWebhook(@Req() req: Request, @Res() res: Response) {
+    // Xử lý payload từ GitHub webhook
+    const signature = req.headers['x-hub-signature-256'] as string;
+    const rawBody = (req as any).rawBody;
+
+    console.log('Received rawbody GitHub webhook:', rawBody);
+    console.log('req.headers:', signature);
+
+    const event = req.headers['x-github-event'];
+    const delivery = req.headers['x-github-delivery'];
+
+    console.log('✅ Valid GitHub webhook:', event, delivery);
+    console.log('Payload:', req.body);
+
+    await this.gw.exec('auth', 'verify_github_webhook', {
+      signature,
+      rawBody,
+    });
+
+    //If verify ok, process event
+
+    res.status(200).send('OK');
+  }
+
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
   @Get('auth/github-oauth/redirect')
@@ -104,19 +128,19 @@ export class GatewayController {
     const clientId = process.env.GITHUB_CLIENT_ID;
     const callbackUrl = process.env.GITHUB_CALLBACK_URL;
     const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}`;
-    
+
     return { url };
   }
 
   @UseGuards(JwtAuthGuard)
-   @Post('auth/github-oauth/redirect-update')
+  @Post('auth/github-oauth/redirect-update')
   async githubOAuthRedirectUpdate(@Req() req: Request) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
     const clientId = process.env.GITHUB_CLIENT_ID;
     const callbackUrl = process.env.GITHUB_CALLBACK_URL;
     const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}&state=${user.id}`;
-    
+
     return { url };
   }
 
@@ -357,25 +381,27 @@ export class GatewayController {
 
   // GITHUB
   @UseGuards(JwtAuthGuard)
-@Post('git/get_repo_installation')
-async get_repo_installation(@Req() req: Request) {
-  const user = req.user as any;
-  if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+  @Post('git/get_repo_installation')
+  async get_repo_installation(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
 
-  // Tạo cache key duy nhất theo user
-  const cacheKey = `repo_installation:${user.id}`;
-  const cached = await this.cacheManager.get(cacheKey);
-  if (cached) {
-    return cached;
+    // Tạo cache key duy nhất theo user
+    const cacheKey = `repo_installation:${user.id}`;
+    const cached = await this.cacheManager.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.gw.exec('git', 'get_repo_installation', {
+      userId: user.id,
+    });
+
+    // Lưu cache với TTL 60 giây
+    await this.cacheManager.set(cacheKey, result);
+
+    return result;
   }
-
-  const result = await this.gw.exec('git', 'get_repo_installation', { userId: user.id });
-
-  // Lưu cache với TTL 60 giây
-  await this.cacheManager.set(cacheKey, result);
-
-  return result;
-}
 
   @UseGuards(JwtAuthGuard)
   @Post('git/get_repo_data_by_url')
@@ -392,61 +418,61 @@ async get_repo_installation(@Req() req: Request) {
       url: dto.url,
       ...dto,
     });
-    await this.cacheManager.set(cacheKey, result, 3 * 60 * 1000);// 3 phút
+    await this.cacheManager.set(cacheKey, result, 3 * 60 * 1000); // 3 phút
     return result;
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('git/get_list_repo_data_by_channel')
+  async get_list_repo_data_by_channel(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
 
+    // 1. Lấy danh sách repo id từ chat service
+    const result = await this.gw.exec('chat', 'listRepositoriesByChannel', {
+      user,
+      ...dto,
+    });
 
-@UseGuards(JwtAuthGuard)
-@Post('git/get_list_repo_data_by_channel')
-async get_list_repo_data_by_channel(@Body() dto: any, @Req() req: Request) {
-  const user = req.user as any;
-  if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
-
-  // 1. Lấy danh sách repo id từ chat service
-  const result = await this.gw.exec('chat', 'listRepositoriesByChannel', {
-    user,
-    ...dto,
-  });
-
-  if (!result?.data) {
-    return { code: 404, msg: 'Not Found', data: null };
-  }
-
-  const items: string[] = result.data.items || [];
-
-  // 2. Tạo snapshot hash cho items
-  const itemsHash = createHash('sha1').update(JSON.stringify(items)).digest('hex');
-
-  const cacheKeySnapshot = `repo_snapshot:${user.id}:${JSON.stringify(dto)}`;
-  const cacheKeyData = `repo_data_by_channel:${user.id}:${JSON.stringify(dto)}`;
-
-  // 3. Kiểm tra snapshot cũ
-  const oldSnapshot = await this.cacheManager.get<string>(cacheKeySnapshot);
-
-  if (oldSnapshot && oldSnapshot === itemsHash) {
-    // Snapshot không đổi => lấy cache data
-    const cached = await this.cacheManager.get<any>(cacheKeyData);
-    if (cached) {
-      return cached;
+    if (!result?.data) {
+      return { code: 404, msg: 'Not Found', data: null };
     }
+
+    const items: string[] = result.data.items || [];
+
+    // 2. Tạo snapshot hash cho items
+    const itemsHash = createHash('sha1')
+      .update(JSON.stringify(items))
+      .digest('hex');
+
+    const cacheKeySnapshot = `repo_snapshot:${user.id}:${JSON.stringify(dto)}`;
+    const cacheKeyData = `repo_data_by_channel:${user.id}:${JSON.stringify(dto)}`;
+
+    // 3. Kiểm tra snapshot cũ
+    const oldSnapshot = await this.cacheManager.get<string>(cacheKeySnapshot);
+
+    if (oldSnapshot && oldSnapshot === itemsHash) {
+      // Snapshot không đổi => lấy cache data
+      const cached = await this.cacheManager.get<any>(cacheKeyData);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    // 4. Nếu snapshot khác hoặc cache trống => gọi Git
+    let data: any;
+    if (items.length > 0) {
+      data = await this.gw.exec('git', 'get_repo_by_ids', { items });
+    } else {
+      data = { code: 200, msg: 'Success', data: [] };
+    }
+
+    // 5. Cập nhật cache
+    await this.cacheManager.set(cacheKeySnapshot, itemsHash, 10 * 60 * 1000); // 10 phút
+    await this.cacheManager.set(cacheKeyData, data, 3 * 60 * 1000); // 3 phút
+
+    return data;
   }
-
-  // 4. Nếu snapshot khác hoặc cache trống => gọi Git
-  let data: any;
-  if (items.length > 0) {
-    data = await this.gw.exec('git', 'get_repo_by_ids', { items });
-  } else {
-    data = { code: 200, msg: 'Success', data: [] };
-  }
-
-  // 5. Cập nhật cache
-  await this.cacheManager.set(cacheKeySnapshot, itemsHash, 10 * 60 * 1000); // 10 phút
-  await this.cacheManager.set(cacheKeyData, data, 3 * 60 * 1000); // 3 phút
-
-  return data;
-}
 
   //Notification
   @UseGuards(JwtAuthGuard)

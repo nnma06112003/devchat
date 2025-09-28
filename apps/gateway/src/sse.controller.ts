@@ -41,7 +41,7 @@ export class NotificationsController {
         return ok;
       }),
       map((msg: any) => ({
-        data: msg?.data ?? msg?.payload ?? msg,
+        data: msg,
       })),
     );
   }

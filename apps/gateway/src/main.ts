@@ -4,6 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { GatewayRpcExceptionFilter } from '@myorg/common';
 import { AuthenticatedSocketIoAdapter } from './adapter/socket-io.adapter'; // thêm dòng này
 import cookieParser from 'cookie-parser';
+import bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -25,6 +26,15 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
+
+  app.use(
+    '/v1/api/github-app/webhook',
+    bodyParser.json({
+      verify: (req: any, res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
 
   // ⚡ cấu hình Socket.IO adapter có xác thực JWT
   app.useWebSocketAdapter(new AuthenticatedSocketIoAdapter(app));
