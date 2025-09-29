@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import bodyParser from 'body-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
   app.use(cookieParser());
 
@@ -24,7 +24,7 @@ async function bootstrap() {
   app.enableCors({
     origin: ['http://localhost:8080', 'https://thaibinhduong1802.id.vn'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: false,
+    credentials: true,
   });
 
   app.use(
@@ -35,6 +35,8 @@ async function bootstrap() {
       },
     }),
   );
+
+  app.use(bodyParser.json());
 
   // ⚡ cấu hình Socket.IO adapter có xác thực JWT
   app.useWebSocketAdapter(new AuthenticatedSocketIoAdapter(app));

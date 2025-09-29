@@ -14,9 +14,10 @@ export class JwtAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     let token = req.headers.authorization?.replace('Bearer ', '');
 
-    console.log('cookies', req.cookies);
     if (!token) {
+      //Lấy token từ cookie nếu không có trong header
       token = req.cookies['access_token'];
+      // console.log('Token from cookies:', token);
     }
 
     if (!token) throw new UnauthorizedException('No token provided');
