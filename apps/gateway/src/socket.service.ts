@@ -101,16 +101,18 @@ export class ChatSocketService {
 
   /* ===================== ROOM OPS ===================== */
   async joinChannel(client: AuthSocket, channelId: string) {
-  // Nếu client đã ở trong room này thì không emit nữa
-  if (client.rooms.has(channelId)) {
-    console.log(`⚠️ User ${client.user?.id} đã ở trong channel ${channelId}, không emit joinedRoom`);
-    return;
+    // Nếu client đã ở trong room này thì không emit nữa
+    if (client.rooms.has(channelId)) {
+      console.log(
+        `⚠️ User ${client.user?.id} đã ở trong channel ${channelId}, không emit joinedRoom`,
+      );
+      return;
+    }
+    client.join(channelId);
+    await this.resetUnread(client, channelId);
+    client.emit('joinedRoom', { channelId });
+    console.log(`✅ User ${client.user?.id} joined channel ${channelId}`);
   }
-  client.join(channelId);
-  await this.resetUnread(client, channelId);
-  client.emit('joinedRoom', { channelId });
-  console.log(`✅ User ${client.user?.id} joined channel ${channelId}`);
-}
 
   leaveChannel(client: AuthSocket, channelId: string) {
     client.leave(channelId);
@@ -240,7 +242,6 @@ export class ChatSocketService {
       });
 
       //Kafka send event to notification service
-      
 
       // ✅ Tăng unread CHO NGƯỜI KHÁC (không phải sender) – chỉ khi họ đã subscribe & không ở trong room
       await this.incrementUnread(
@@ -256,9 +257,9 @@ export class ChatSocketService {
           status: 'sent',
         });
       }
-      // await this.gw.exec('notification', 'send_message_notification', {
-      //   ...res,
-      // });
+      await this.gw.exec('notification', 'send_message_notification', {
+        ...res,
+      });
     } catch (err: any) {
       this.server.to(message.channelId).emit('receiveMessage', {
         ...pendingMsg,

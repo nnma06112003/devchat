@@ -4,9 +4,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { GatewayRpcExceptionFilter } from '@myorg/common';
 import { AuthenticatedSocketIoAdapter } from './adapter/socket-io.adapter'; // thêm dòng này
 import cookieParser from 'cookie-parser';
+import bodyParser from 'body-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
   app.use(cookieParser());
 
@@ -23,8 +24,19 @@ async function bootstrap() {
   app.enableCors({
     origin: ['http://localhost:8080', 'https://thaibinhduong1802.id.vn'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: false,
+    credentials: true,
   });
+
+  app.use(
+    '/v1/api/github-app/webhook',
+    bodyParser.json({
+      verify: (req: any, res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
+
+  app.use(bodyParser.json());
 
   // ⚡ cấu hình Socket.IO adapter có xác thực JWT
   app.useWebSocketAdapter(new AuthenticatedSocketIoAdapter(app));

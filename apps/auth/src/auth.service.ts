@@ -1,8 +1,6 @@
 // Tạo refresh_token và lưu vào user
 
-import {
-  Injectable,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UserRepository } from './repositories/user.repository';
@@ -170,7 +168,7 @@ export class AuthService {
       username: user.username,
       role: user.role,
       github_verified: user.github_verified,
-      github_installation_id: user.github_installation_id || null
+      github_installation_id: user.github_installation_id || null,
     };
     const access_token = this.jwtService.sign(payload);
     const refresh_token = await this.generateAndSaverefresh_token(user);
@@ -231,8 +229,10 @@ export class AuthService {
       { sub: user.id },
       {
         expiresIn: '7d',
-        secret: process.env.REFRESH_SECRET_KEY || 'nguyenthaibinhduongdevchatapprefresh',
-      }
+        secret:
+          process.env.REFRESH_SECRET_KEY ||
+          'nguyenthaibinhduongdevchatapprefresh',
+      },
     );
     user.refresh_token = refresh_token;
     await this.userRepository.save(user);
@@ -241,8 +241,11 @@ export class AuthService {
 
   // Refresh token
   async refreshToken(refresh_token: string): Promise<any> {
-    const payload: any = this.jwtService.verify(refresh_token,
-      { secret: process.env.REFRESH_SECRET_KEY || 'nguyenthaibinhduongdevchatapprefresh' });
+    const payload: any = this.jwtService.verify(refresh_token, {
+      secret:
+        process.env.REFRESH_SECRET_KEY ||
+        'nguyenthaibinhduongdevchatapprefresh',
+    });
     const user: any = await this.userRepository.findById(payload.sub);
     console.log('user id:', payload.sub);
     console.log('user:', user);
@@ -261,7 +264,7 @@ export class AuthService {
       username: user.username,
       role: user.role,
       github_verified: user.github_verified,
-      github_installation_id: user.github_installation_id || null
+      github_installation_id: user.github_installation_id || null,
     };
 
     console.log('payload:', payloadData);
@@ -271,13 +274,20 @@ export class AuthService {
 
     // 4. Trả về token mới
     return {
-      
       access_token: access_token ?? null,
       refresh_token: new_refresh_token ?? null,
     };
   }
 
-  async updateProfile(userId: string, data: { username?: string; email?: string , github_verified?: boolean , github_installation_id?: string }): Promise<any> {
+  async updateProfile(
+    userId: string,
+    data: {
+      username?: string;
+      email?: string;
+      github_verified?: boolean;
+      github_installation_id?: string;
+    },
+  ): Promise<any> {
     const user = await this.userRepository.findById(userId);
     if (!user) {
       throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
@@ -286,8 +296,10 @@ export class AuthService {
     // Chỉ cập nhật các trường hợp lệ
     if (data.username !== undefined) user.username = data.username;
     if (data.email !== undefined) user.email = data.email;
-    if (data.github_verified !== undefined) user.github_verified = data.github_verified;
-    if (data.github_installation_id !== undefined) user.github_installation_id = data.github_installation_id;
+    if (data.github_verified !== undefined)
+      user.github_verified = data.github_verified;
+    if (data.github_installation_id !== undefined)
+      user.github_installation_id = data.github_installation_id;
 
     await this.userRepository.save(user);
 
@@ -297,12 +309,11 @@ export class AuthService {
       username: user.username,
       role: user.role,
       updated_at: user.updated_at,
-      github_verified: user.github_verified
+      github_verified: user.github_verified,
     };
   }
 
   async getTokenUserData(userId: any): Promise<any> {
-
     const user: any = await this.userRepository.findById(userId);
 
     // if (user.refresh_token) {
@@ -314,7 +325,7 @@ export class AuthService {
       username: user.username,
       role: user.role,
       github_verified: user.github_verified,
-      github_installation_id: user.github_installation_id || null
+      github_installation_id: user.github_installation_id || null,
     };
     const access_token = this.jwtService.sign(payload);
     const new_refresh_token = await this.generateAndSaverefresh_token(user);
@@ -326,5 +337,42 @@ export class AuthService {
     };
   }
 
+  //Verify Github Webhook Signature
+  verifyWebhookSignature(signature: string, rawBody: Buffer | string): void {
+    if (!signature) throw new UnauthorizedException('Missing signature');
 
+    // Ensure signature starts with expected prefix
+    const expectedPrefix = 'sha256='; // GitHub uses sha256
+    if (!signature.startsWith(expectedPrefix)) {
+      throw new UnauthorizedException('Invalid signature format');
+    }
+
+    // Use Buffer for HMAC input
+    const payloadBuffer = Buffer.isBuffer(rawBody)
+      ? rawBody
+      : Buffer.from(rawBody || '', 'utf8');
+
+    const secret = process.env.GITHUB_WEBHOOK_SECRET || 'my-webhook-secret';
+    const hmac = crypto.createHmac('sha256', secret);
+    hmac.update(payloadBuffer);
+    const digest = `${expectedPrefix}${hmac.digest('hex')}`;
+
+    const sigBuffer = Buffer.from(signature, 'utf8');
+    const digestBuffer = Buffer.from(digest, 'utf8');
+
+    // timingSafeEqual requires same length buffers
+    if (sigBuffer.length !== digestBuffer.length) {
+      throw new UnauthorizedException('Invalid signature');
+    }
+
+    const valid = crypto.timingSafeEqual(digestBuffer, sigBuffer);
+
+    console.log('Computed digest:', digest);
+    console.log('Received signature:', signature);
+    console.log('Signature valid:', valid);
+
+    if (!valid) {
+      throw new UnauthorizedException('Invalid signature');
+    }
+  }
 }

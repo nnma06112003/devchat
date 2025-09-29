@@ -17,9 +17,9 @@ export class NotificationsController {
     console.log('User connected to SSE stream:', userId);
 
     return fromEvent(this.kafkaConsumer, 'notification').pipe(
-      tap((m: any) =>
-        console.log('kafka->sse raw message:', JSON.stringify(m)),
-      ),
+      // tap((m: any) =>
+      //   console.log('kafka->sse raw message:', JSON.stringify(m)),
+      // ),
       filter((msg: any) => {
         // hỗ trợ nhiều shape payload và so sánh bằng string để tránh mismatch kiểu (number vs string)
         const candidate =
@@ -41,7 +41,7 @@ export class NotificationsController {
         return ok;
       }),
       map((msg: any) => ({
-        data: msg?.data ?? msg?.payload ?? msg,
+        data: msg,
       })),
     );
   }
