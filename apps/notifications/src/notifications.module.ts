@@ -3,7 +3,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { NotificationController } from './notifications.controller';
 import { NotificationService } from './notifications.service';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import {  ConfigService } from '@nestjs/config';
 import { Notification, NotificationSchema } from '@myorg/schemas';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Channel } from '@myorg/entities';
@@ -12,7 +12,6 @@ import { KafkaPublisher } from './kafka-publisher';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true ,envFilePath: `.env.${process.env.NODE_ENV}`}),
 
     ClientsModule.register([
       {

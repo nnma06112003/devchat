@@ -17,6 +17,7 @@ if %errorlevel%==0 (
     new-tab --title "chat"      cmd /k "cd /d %Workspace% && yarn dev:chat" ^; ^
     new-tab --title "github"    cmd /k "cd /d %Workspace% && yarn dev:github" ^; ^
     new-tab --title "upload"    cmd /k "cd /d %Workspace% && yarn dev:upload" ^; ^
+    new-tab --title "notifications"    cmd /k "cd /d %Workspace% && yarn dev:notifications" ^; ^
     new-tab --title "frontend"  cmd /k "cd /d %WorkspaceFE% && yarn dev"
 ) else (
   start "gateway"   cmd /k "cd /d %Workspace% && yarn dev:gateway || pause"
@@ -24,6 +25,7 @@ if %errorlevel%==0 (
   start "chat"      cmd /k "cd /d %Workspace% && yarn dev:chat || pause"
   start "github"    cmd /k "cd /d %Workspace% && yarn dev:github || pause"
   start "upload"    cmd /k "cd /d %Workspace% && yarn dev:upload || pause"
+  start "notifications"    cmd /k "cd /d %Workspace% && yarn dev:notifications || pause"
   start "frontend"  cmd /k "cd /d %WorkspaceFE% && yarn dev || pause"
 )
 
