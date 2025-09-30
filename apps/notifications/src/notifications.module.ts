@@ -8,7 +8,7 @@ import { Notification, NotificationSchema } from '@myorg/schemas';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Channel } from '@myorg/entities';
 import { DatabaseModule } from '@myorg/database';
-import { KafkaPublisher } from './kafka-publisher';
+
 
 @Module({
   imports: [
@@ -45,6 +45,6 @@ import { KafkaPublisher } from './kafka-publisher';
     ]),
   ],
   controllers: [NotificationController],
-  providers: [NotificationService, KafkaPublisher],
+  providers: [NotificationService],
 })
 export class NotificationModule {}

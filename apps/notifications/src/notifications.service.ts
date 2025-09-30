@@ -5,8 +5,6 @@ import { Notification, NotificationDocument } from '@myorg/schemas';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Channel } from '@myorg/entities';
-import { get } from 'axios';
-import { KafkaPublisher } from './kafka-publisher';
 
 @Injectable()
 export class NotificationService {
@@ -17,7 +15,6 @@ export class NotificationService {
     private notificationModel: Model<NotificationDocument>,
     @InjectRepository(Channel)
     private channelRepository: Repository<Channel>,
-    private readonly kafkaPublisher: KafkaPublisher, // thêm helper
   ) {}
 
   //Helpers
@@ -36,40 +33,33 @@ export class NotificationService {
   }
 
   // Tạo notification mới
-  async createNotification(data: any): Promise<void> {
+  async createNotification(data: any): Promise<any> {
     try {
       const channelId = data?.channel?.id;
       const senderId = data?.sender?.id;
 
       const members = (await this.getChannelMembers(channelId)).filter(
         (m) => m.id !== String(senderId),
-      );
+      ).map((m) => m.id);
+
+      const savedNotifications = [];
 
       for (const member of members) {
         const notification = new this.notificationModel({
-          userId: member.id,
+          userId: member,
           type: data.channel.type,
           data: data,
           read: false,
           createdAt: new Date(),
         });
-
-        console.log('Notification created:', notification);
-
-        await notification.save();
-
-        // 🔥 Publish event vào Kafka cho Gateway
-        await this.kafkaPublisher.publish('notification.events', {
-          userId: member.id,
-          type: data.channel.type,
-          data,
-          createdAt: notification.createdAt,
-        });
-
-        this.logger.log(
-          `Notification created & published for user ${member.id}`,
-        );
+        const savedNotification = await notification.save();
+        savedNotifications.push(savedNotification);
       }
+
+      return { 
+        notifications: savedNotifications,
+      };
+     
     } catch (error: any) {
       this.logger.error(
         `Error creating notification: ${error.message}`,

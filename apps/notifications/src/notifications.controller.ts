@@ -16,7 +16,7 @@ export class NotificationController {
       case 'send_message_notification':
         return this.notificationService.createNotification(data.data);
       case 'get_notifications':
-        return this.notificationService.getNotificationsForUser(data.userId);
+        return this.notificationService.getNotificationsForUser(data.userId, data.query);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }

@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { Request, Response } from 'express';
+import {  Request, Response } from 'express';
 import { ChatSocketService } from './socket.service';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -477,10 +477,11 @@ export class GatewayController {
   //Notification
   @UseGuards(JwtAuthGuard)
   @Get('notifications')
-  async getNotifications(@Req() req: Request) {
+  async getNotifications(@Query() query: any, @Req() req: Request) {
     const user = req.user as any;
     return this.gw.exec('notification', 'get_notifications', {
       userId: user.id,
+      ...query
     });
   }
 }

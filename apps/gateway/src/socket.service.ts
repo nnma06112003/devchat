@@ -228,6 +228,7 @@ export class ChatSocketService {
         const status = JSON.parse(statusStr);
         if (status.online && status.socketId) {
           this.server.to(status.socketId).emit('receiveChannel', activeChannel);
+
           console.log(
             `📢 Sent activeChannel to user ${uid} at socket ${status.socketId}`,
           );
@@ -257,9 +258,26 @@ export class ChatSocketService {
           status: 'sent',
         });
       }
-      await this.gw.exec('notification', 'send_message_notification', {
+      const result = await this.gw.exec('notification', 'send_message_notification', {
         ...res,
       });
+
+      if (result?.data) {
+        for (const notify of result?.data.notifications) {
+        const statusStr = await this.redis.hget('user_status', notify?.userId);
+        if (!statusStr) continue;
+        const status = JSON.parse(statusStr);
+        if (status.online && status.socketId) {
+          this.server.to(status.socketId).emit('receiveNotification', {
+            ...notify ,
+            fakeID: tempId,
+          });
+          console.log(
+            `📢 Sent channel to user ${notify?.userId} at socket ${status.socketId}`,
+          );
+        }
+      }
+      }
     } catch (err: any) {
       this.server.to(message.channelId).emit('receiveMessage', {
         ...pendingMsg,
