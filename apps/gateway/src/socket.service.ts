@@ -258,8 +258,9 @@ export class ChatSocketService {
           status: 'sent',
         });
       }
-      const result = await this.gw.exec('notification', 'send_message_notification', {
+      const result = await this.gw.exec('notification', 'send_notification', {
         ...res,
+        type:'message',
       });
 
       if (result?.data) {
@@ -317,5 +318,35 @@ export class ChatSocketService {
     const key = this.unreadKey(String(userId));
     await this.redis.hset(key, String(channelId), 0);
     client.emit('unreadCount', { channelId: String(channelId), count: 0 });
+  }
+
+
+   async broadcastWebhook(data: any) {
+    try {
+      const installationId = data.installationId;
+      const tempId = Date.now();
+      if (!installationId) return;
+
+      const result = await this.gw.exec('notification', 'send_notification', { ...data ,type:'github' });
+      if (result?.data) {
+        for (const notify of result?.data.notifications) {
+          const statusStr = await this.redis.hget('user_status', notify?.userId);
+          if (!statusStr) continue;
+          const status = JSON.parse(statusStr);
+          if (status.online && status.socketId) {
+            this.server.to(status.socketId).emit('receiveNotification', {
+              ...notify,
+              fakeID: tempId,
+            });
+            console.log('data github notification',{ ...notify});
+            console.log(
+              `📢 Sent channel to user ${notify?.userId} at socket ${status.socketId}`,
+            );
+          }
+        }
+      } 
+    } catch (error) {
+      //console.error(`Error broadcasting webhook: ${error.message}`);
+    }
   }
 }

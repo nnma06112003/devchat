@@ -13,8 +13,8 @@ export class NotificationController {
   async handle(@Payload() message: { cmd: string; data: any }) {
     const { cmd, data } = message || {};
     switch (cmd) {
-      case 'send_message_notification':
-        return this.notificationService.createNotification(data.data);
+      case 'send_notification':
+        return this.notificationService.createNotification(data.data, data.type);
       case 'get_notifications':
         return this.notificationService.getNotificationsForUser(data.userId, data.query);
       default:

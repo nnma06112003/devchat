@@ -71,7 +71,7 @@ export class GatewayService implements OnModuleInit {
     }
   }
 
-
+ 
 
   async getAllOnlineUsers(): Promise<{ code: number; msg: string; data: string[] }> {
   const all = await this.redis.hgetall("user_status");

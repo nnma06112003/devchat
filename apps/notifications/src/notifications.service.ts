@@ -4,7 +4,9 @@ import { Model } from 'mongoose';
 import { Notification, NotificationDocument } from '@myorg/schemas';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Channel } from '@myorg/entities';
+import { Channel, User } from '@myorg/entities';
+import { RpcCustomException } from '@myorg/common';
+import { log } from 'console';
 
 @Injectable()
 export class NotificationService {
@@ -15,6 +17,8 @@ export class NotificationService {
     private notificationModel: Model<NotificationDocument>,
     @InjectRepository(Channel)
     private channelRepository: Repository<Channel>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
   ) {}
 
   //Helpers
@@ -33,9 +37,20 @@ export class NotificationService {
   }
 
   // Tạo notification mới
-  async createNotification(data: any): Promise<any> {
-    try {
-      const channelId = data?.channel?.id;
+  async createNotification(data: any, type = 'message'): Promise<any> {
+    switch (type) {
+      case 'message':
+        return this.createMessageNotification(data);  
+      case 'github':
+        return this.createGitHubNotification(data);
+      default:
+        throw new RpcCustomException(`Unsupported notification type: ${type}`);
+    }
+  }
+
+  // Tạo notification mới cho tin nhắn
+  private async createMessageNotification(data: any): Promise<any> {
+    const channelId = data?.channel?.id;
       const senderId = data?.sender?.id;
 
       const members = (await this.getChannelMembers(channelId)).filter(
@@ -47,7 +62,7 @@ export class NotificationService {
       for (const member of members) {
         const notification = new this.notificationModel({
           userId: member,
-          type: data.channel.type,
+          type: 'message',
           data: data,
           read: false,
           createdAt: new Date(),
@@ -59,14 +74,29 @@ export class NotificationService {
       return { 
         notifications: savedNotifications,
       };
-     
-    } catch (error: any) {
-      this.logger.error(
-        `Error creating notification: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
+  }
+
+  private async createGitHubNotification(data: any): Promise<any> {
+      const installationId = data?.installationId || data?.installation?.id;
+      console.log('GitHub installationId:', installationId);
+
+      const user: any = await this.userRepository.findOneBy({ github_installation_id: installationId });
+    console.log('User found:', user);  
+      
+    const savedNotifications = [];
+      const notification = new this.notificationModel({
+          userId: user.id,
+          type: 'github',
+          data: data,
+          read: false,
+          createdAt: new Date(),
+        });
+        const savedNotification = await notification.save();
+    savedNotifications.push(savedNotification);
+    
+      return { 
+        notifications: savedNotifications,
+      };
   }
 
   // Lấy tất cả notification của user

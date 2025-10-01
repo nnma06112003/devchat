@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { Partitioners } from 'kafkajs';
+import { Kafka, Partitioners } from 'kafkajs';
 import { ConfigModule } from '@nestjs/config';
 import { GatewayController } from './gateway.controller';
 import { GatewayService } from './gateway.service';
@@ -10,6 +10,7 @@ import { ChatSocketService } from './socket.service';
 import { RedisProvider } from './redis/redis.provider';
 import * as redisStore from 'cache-manager-ioredis';
 import { CacheModule } from '@nestjs/cache-manager';
+import { KafkaService } from './kafka/kafka.service';
 
 
 const SERVICES = ['auth', 'chat', 'upload', 'git', 'notification']; // mở rộng dễ dàng: search, file, notification...
@@ -54,6 +55,7 @@ const TOPICS = SERVICES.map((s) => `svc.${s}.exec`);
   providers: [
     GatewayService,
     ChatSocketService,
+    KafkaService,
     ChatGateway,
     RedisProvider,
     { provide: 'GATEWAY_TOPICS', useValue: TOPICS },

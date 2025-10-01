@@ -9,7 +9,7 @@ export class Notification {
   userId: string;
 
   @Prop({ required: true })
-  type: string; // "message", "tag", "system"
+  type: 'message' | 'github' | 'system';
 
   @Prop({ type: Object })
   data: Record<string, any>;

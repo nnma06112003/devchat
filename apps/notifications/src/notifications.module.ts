@@ -6,7 +6,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import {  ConfigService } from '@nestjs/config';
 import { Notification, NotificationSchema } from '@myorg/schemas';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Channel } from '@myorg/entities';
+import { Channel, User } from '@myorg/entities';
 import { DatabaseModule } from '@myorg/database';
 
 
@@ -28,7 +28,7 @@ import { DatabaseModule } from '@myorg/database';
       },
     ]),
     DatabaseModule,
-    TypeOrmModule.forFeature([Channel]),
+    TypeOrmModule.forFeature([Channel,User]),
 
     //Mongodb connection
     MongooseModule.forRootAsync({

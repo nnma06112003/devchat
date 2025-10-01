@@ -9,6 +9,8 @@ import {
   Req,
   Res,
   Inject,
+  HttpCode,
+  Headers,
 } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -16,7 +18,8 @@ import {  Request, Response } from 'express';
 import { ChatSocketService } from './socket.service';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { createHash } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
+import { KafkaService } from './kafka/kafka.service';
 
 type StatePayload = { next: string; userId: string | number };
 
@@ -34,6 +37,13 @@ function decodeState(raw?: string): StatePayload | null {
   }
 }
 
+function verifySignature(secret: string, bodyRaw: Buffer, signature256: string): boolean {
+    const hmac = createHmac('sha256', secret).update(bodyRaw).digest('hex');
+    const expected = Buffer.from(`sha256=${hmac}`, 'utf8');
+    const received = Buffer.from(signature256 || '', 'utf8');
+    return expected.length === received.length && timingSafeEqual(expected, received);
+  }
+
 // Tất cả HTTP từ FE đi qua controller này → định tuyến tới Kafka
 @Controller('api')
 export class GatewayController {
@@ -41,6 +51,7 @@ export class GatewayController {
   constructor(
     private readonly gw: GatewayService,
     private readonly ChatSocketService: ChatSocketService,
+    private readonly kafka: KafkaService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
@@ -96,30 +107,45 @@ export class GatewayController {
   }
 
   //github webhook
-  @Post('github-app/webhook')
-  async githubWebhook(@Req() req: Request, @Res() res: Response) {
-    // Xử lý payload từ GitHub webhook
-    const signature = req.headers['x-hub-signature-256'] as string;
-    const rawBody = (req as any).rawBody;
+@Post('github-app/webhook')
+@HttpCode(200)
+@HttpCode(201)
+async handle(
+  @Req() req: any,
+  @Res() res: any,
+  @Headers('x-hub-signature-256') sig256: string,
+  @Headers('x-github-event') ghEvent: string,
+  @Headers('x-github-delivery') deliveryId: string,
+) {
+  const secret = process.env.GITHUB_APP_WEBHOOK_SECRET || 'ppB6va3mMw';
+  const raw = req.rawBody || Buffer.from(JSON.stringify(req.body));
 
-    console.log('Received rawbody GitHub webhook:', rawBody);
-    console.log('req.headers:', signature);
-
-    const event = req.headers['x-github-event'];
-    const delivery = req.headers['x-github-delivery'];
-
-    console.log('✅ Valid GitHub webhook:', event, delivery);
-    console.log('Payload:', req.body);
-
-    await this.gw.exec('auth', 'verify_github_webhook', {
-      signature,
-      rawBody,
-    });
-
-    //If verify ok, process event
-
-    res.status(200).send('OK');
+  // Verify chữ ký GitHub
+  if (!verifySignature(secret, raw, sig256)) {
+    return res.status(401).send('Invalid signature');
   }
+
+  const payload = JSON.parse(raw.toString());
+
+  // Chuẩn hoá message để gửi đi
+  const message = {
+    deliveryId,
+    event: ghEvent,                     // ví dụ: "pull_request"
+    action: payload.action,             // ví dụ: "opened"
+    installationId: payload.installation?.id,
+    repoId: payload.repository?.id,
+    repoFullName: payload.repository?.full_name,
+    createdAt: new Date().toISOString(),
+    data: payload                       // giữ nguyên payload gốc
+  };
+
+  // Publish vào Kafka topic
+  await this.kafka.publish('github.webhooks', message);
+
+  return res.send('OK');
+}
+
+
 
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...

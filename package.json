@@ -37,8 +37,9 @@
     "build:common": "nest build common",
     "build:all": "yarn build:entities && yarn build:database && yarn build:common && yarn build:auth && yarn build:chat && yarn build:gateway",
     "db:seed": "ts-node -r tsconfig-paths/register libs/database/src/seeds/seed.ts",
-    "db:reset": "docker stop devchat-postgres-1 && docker rm devchat-postgres-1 && docker volume rm devchat_postgres_data && yarn db:redis && yarn db:seed",
-    "db:redis": "docker stop redis && docker rm redis && docker volume rm devchat_redis_data && docker compose up -d ",
+    "db:reset": "docker stop devchat-postgres-1 && docker rm devchat-postgres-1 && docker volume rm devchat_postgres_data && yarn db:redis && yarn db:mongodb && docker compose up -d && yarn db:seed",
+    "db:redis": "docker stop redis && docker rm redis && docker volume rm devchat_redis_data",
+    "db:mongodb": "docker stop devchat-mongodb-1  && docker rm devchat-mongodb-1  && docker volume rm devchat_mongodb_data",
     "up": "docker compose up -d",
     "down": "docker compose down",
     "cm": "git add . && git commit -m 'ok' && git pull && git push"
