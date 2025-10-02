@@ -70,6 +70,15 @@ export class GatewayController {
     return { url: result.data };
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('github-app/uninstall')
+  async githubAppUninstall(@Req() req: Request) {
+    const user = req.user as any;
+    return await this.gw.exec('git', 'unlink_github_app', {
+      userId: user.id,
+    });
+  }
+
   @Get('github-app/setup')
   async setup(
     @Query('installation_id') installationId: string,

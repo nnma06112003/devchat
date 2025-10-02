@@ -23,6 +23,8 @@ export class GitController {
         return this.GitService.loadFromRepoLink(payload.data.userId, payload.data.url || '', payload.data);
       case 'get_repo_by_ids':
         return this.GitService.getMultipleReposInfo(payload.data.items);
+      case 'unlink_github_app':
+        return this.GitService.unlinkGitHubApp(payload.data.userId);
 
       default:
         return { error: 'Unknown command' };

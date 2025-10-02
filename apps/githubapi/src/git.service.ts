@@ -471,7 +471,99 @@ async updateGithubUserInfoIfChanged(userId: string,userToken: string) {
     return user;
   }
   return null;
+  }
+  
+async unlinkGitHubApp(userId: string | number) {
+  const user: any = await this.userRepo.findOne({ where: { id: userId } });
+  if (!user) {
+    throw new RpcCustomException('User not found', 404);
+  }
+
+  const installationId = user.github_installation_id;
+  if (!installationId) {
+    throw new RpcCustomException('User has no GitHub App installation', 400);
+  }
+
+  let githubUnlinkSuccess = false;
+  
+  try {
+    // 1. Gửi API đến GitHub để hủy installation
+    await this.deleteInstallation(Number(installationId));
+    githubUnlinkSuccess = true;
+    console.log(`✅ Successfully uninstalled GitHub App for installation ${installationId}`);
+  } catch (error: any) {
+    console.warn(`⚠️ Failed to uninstall from GitHub: ${error.message}`);
+    // Tiếp tục cleanup local data ngay cả khi GitHub API fail
+  }
+
+  // 2. Lấy repository manager đúng cách
+  const repoRepo = this.messageRepo.manager.getRepository('Repository');
+  
+  // 3. Tìm tất cả repositories có cùng installation_id
+  const repos: any[] = await repoRepo
+    .createQueryBuilder('repo')
+    .leftJoinAndSelect('repo.channels', 'channels')
+    .leftJoin('repo.user', 'user')
+    .where('user.github_installation_id = :installationId', { installationId })
+    .getMany();
+
+  // 4. Xóa repo khỏi tất cả channels
+  for (const repo of repos) {
+    if (repo.channels && repo.channels.length > 0) {
+      repo.channels = [];
+      await repoRepo.save(repo);
+    }
+  }
+
+  // 5. Xóa tất cả repositories của installation này
+  if (repos.length > 0) {
+    const repoIds = repos.map(repo => repo.id);
+    await repoRepo.delete({ id: In(repoIds) });
+  }
+
+  // 6. Reset thông tin GitHub của user
+  user.github_installation_id = null;
+  user.github_verified = false;
+  user.github_user_id = null;
+  user.github_email = null;
+  user.github_avatar = null;
+  await this.userRepo.save(user);
+
+  return {
+    message: 'GitHub App unlinked successfully',
+    userId: user.id,
+    removedInstallationId: installationId,
+    removedReposCount: repos.length,
+    githubUnlinkSuccess,
+  };
 }
+
+// Hàm helper: Gửi API đến GitHub để xóa installation
+private async deleteInstallation(installationId: number) {
+  const appJwt = this.createAppJWT();
+  const url = `https://api.github.com/app/installations/${installationId}`;
+
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${appJwt}`,
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'mychat-app/1.0',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new RpcCustomException(
+      `Failed to delete installation: ${res.status} ${errorText}`,
+      res.status
+    );
+  }
+
+  return true;
+}
+  
 
 
 }
