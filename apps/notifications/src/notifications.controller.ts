@@ -14,9 +14,20 @@ export class NotificationController {
     const { cmd, data } = message || {};
     switch (cmd) {
       case 'send_notification':
-        return this.notificationService.createNotification(data.data, data.type);
+        return this.notificationService.createNotification(
+          data.data,
+          data.type,
+        );
       case 'get_notifications':
-        return this.notificationService.getNotificationsForUser(data.userId, data.query);
+        console.log('QUERY', data.query);
+        return this.notificationService.getNotificationsForUser(
+          data.userId,
+          data.query,
+        );
+      case 'mark_as_read':
+        return this.notificationService.markAsRead(data.notificationId);
+      case 'mark_all_as_read':
+        return this.notificationService.markAllAsRead(data.userId);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }

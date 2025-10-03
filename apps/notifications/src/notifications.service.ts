@@ -40,7 +40,7 @@ export class NotificationService {
   async createNotification(data: any, type = 'message'): Promise<any> {
     switch (type) {
       case 'message':
-        return this.createMessageNotification(data);  
+        return this.createMessageNotification(data);
       case 'github':
         return this.createGitHubNotification(data);
       default:
@@ -51,63 +51,73 @@ export class NotificationService {
   // Tạo notification mới cho tin nhắn
   private async createMessageNotification(data: any): Promise<any> {
     const channelId = data?.channel?.id;
-      const senderId = data?.sender?.id;
+    const senderId = data?.sender?.id;
 
-      const members = (await this.getChannelMembers(channelId)).filter(
-        (m) => m.id !== String(senderId),
-      ).map((m) => m.id);
+    const members = (await this.getChannelMembers(channelId))
+      .filter((m) => m.id !== String(senderId))
+      .map((m) => m.id);
 
-      const savedNotifications = [];
+    const savedNotifications = [];
 
-      for (const member of members) {
-        const notification = new this.notificationModel({
-          userId: member,
-          type: 'message',
-          data: data,
-          read: false,
-          createdAt: new Date(),
-        });
-        const savedNotification = await notification.save();
-        savedNotifications.push(savedNotification);
-      }
+    for (const member of members) {
+      const notification = new this.notificationModel({
+        userId: member,
+        type: 'message',
+        data: data,
+        read: false,
+        createdAt: new Date(),
+      });
+      const savedNotification = await notification.save();
+      savedNotifications.push(savedNotification);
+    }
 
-      return { 
-        notifications: savedNotifications,
-      };
+    return {
+      notifications: savedNotifications,
+    };
   }
 
   private async createGitHubNotification(data: any): Promise<any> {
-      const installationId = data?.installationId || data?.installation?.id;
-      console.log('GitHub installationId:', installationId);
+    const installationId = data?.installationId || data?.installation?.id;
+    console.log('GitHub installationId:', installationId);
 
-      const user: any = await this.userRepository.findOneBy({ github_installation_id: installationId });
-    console.log('User found:', user);  
-      
+    const user: any = await this.userRepository.findOneBy({
+      github_installation_id: installationId,
+    });
+    console.log('User found:', user);
+
     const savedNotifications = [];
-      const notification = new this.notificationModel({
-          userId: user.id,
-          type: 'github',
-          data: data,
-          read: false,
-          createdAt: new Date(),
-        });
-        const savedNotification = await notification.save();
+    const notification = new this.notificationModel({
+      userId: user.id,
+      type: 'github',
+      data: data,
+      read: false,
+      createdAt: new Date(),
+    });
+    const savedNotification = await notification.save();
     savedNotifications.push(savedNotification);
-    
-      return { 
-        notifications: savedNotifications,
-      };
+
+    return {
+      notifications: savedNotifications,
+    };
   }
 
   // Lấy tất cả notification của user
   async getNotificationsForUser(
     userId: string,
-    query: { page?: number; limit?: number; read?: boolean } = {},
+    query: {
+      page?: number;
+      limit?: number;
+      read?: boolean;
+      type?: string;
+    } = {},
   ): Promise<{ notifications: Notification[]; total: number }> {
     try {
       const filter: any = { userId };
       if (query.read !== undefined) {
         filter.read = query.read;
+      }
+      if (query.type !== undefined) {
+        filter.type = query.type;
       }
 
       const page = query.page || 1;

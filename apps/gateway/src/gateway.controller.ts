@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { GatewayService } from './gateway.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import {  Request, Response } from 'express';
+import { Request, Response } from 'express';
 import { ChatSocketService } from './socket.service';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -37,12 +37,18 @@ function decodeState(raw?: string): StatePayload | null {
   }
 }
 
-function verifySignature(secret: string, bodyRaw: Buffer, signature256: string): boolean {
-    const hmac = createHmac('sha256', secret).update(bodyRaw).digest('hex');
-    const expected = Buffer.from(`sha256=${hmac}`, 'utf8');
-    const received = Buffer.from(signature256 || '', 'utf8');
-    return expected.length === received.length && timingSafeEqual(expected, received);
-  }
+function verifySignature(
+  secret: string,
+  bodyRaw: Buffer,
+  signature256: string,
+): boolean {
+  const hmac = createHmac('sha256', secret).update(bodyRaw).digest('hex');
+  const expected = Buffer.from(`sha256=${hmac}`, 'utf8');
+  const received = Buffer.from(signature256 || '', 'utf8');
+  return (
+    expected.length === received.length && timingSafeEqual(expected, received)
+  );
+}
 
 // Tất cả HTTP từ FE đi qua controller này → định tuyến tới Kafka
 @Controller('api')
@@ -116,45 +122,43 @@ export class GatewayController {
   }
 
   //github webhook
-@Post('github-app/webhook')
-@HttpCode(200)
-@HttpCode(201)
-async handle(
-  @Req() req: any,
-  @Res() res: any,
-  @Headers('x-hub-signature-256') sig256: string,
-  @Headers('x-github-event') ghEvent: string,
-  @Headers('x-github-delivery') deliveryId: string,
-) {
-  const secret = process.env.GITHUB_APP_WEBHOOK_SECRET || 'ppB6va3mMw';
-  const raw = req.rawBody || Buffer.from(JSON.stringify(req.body));
+  @Post('github-app/webhook')
+  @HttpCode(200)
+  @HttpCode(201)
+  async handle(
+    @Req() req: any,
+    @Res() res: any,
+    @Headers('x-hub-signature-256') sig256: string,
+    @Headers('x-github-event') ghEvent: string,
+    @Headers('x-github-delivery') deliveryId: string,
+  ) {
+    const secret = process.env.GITHUB_APP_WEBHOOK_SECRET || 'ppB6va3mMw';
+    const raw = req.rawBody || Buffer.from(JSON.stringify(req.body));
 
-  // Verify chữ ký GitHub
-  if (!verifySignature(secret, raw, sig256)) {
-    return res.status(401).send('Invalid signature');
+    // Verify chữ ký GitHub
+    if (!verifySignature(secret, raw, sig256)) {
+      return res.status(401).send('Invalid signature');
+    }
+
+    const payload = JSON.parse(raw.toString());
+
+    // Chuẩn hoá message để gửi đi
+    const message = {
+      deliveryId,
+      event: ghEvent, // ví dụ: "pull_request"
+      action: payload.action, // ví dụ: "opened"
+      installationId: payload.installation?.id,
+      repoId: payload.repository?.id,
+      repoFullName: payload.repository?.full_name,
+      createdAt: new Date().toISOString(),
+      data: payload, // giữ nguyên payload gốc
+    };
+
+    // Publish vào Kafka topic
+    await this.kafka.publish('github.webhooks', message);
+
+    return res.send('OK');
   }
-
-  const payload = JSON.parse(raw.toString());
-
-  // Chuẩn hoá message để gửi đi
-  const message = {
-    deliveryId,
-    event: ghEvent,                     // ví dụ: "pull_request"
-    action: payload.action,             // ví dụ: "opened"
-    installationId: payload.installation?.id,
-    repoId: payload.repository?.id,
-    repoFullName: payload.repository?.full_name,
-    createdAt: new Date().toISOString(),
-    data: payload                       // giữ nguyên payload gốc
-  };
-
-  // Publish vào Kafka topic
-  await this.kafka.publish('github.webhooks', message);
-
-  return res.send('OK');
-}
-
-
 
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
@@ -516,7 +520,25 @@ async handle(
     const user = req.user as any;
     return this.gw.exec('notification', 'get_notifications', {
       userId: user.id,
-      ...query
+      query,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('notifications/mark-as-read')
+  async markAsRead(@Body() body: any, @Req() req: Request) {
+    const user = req.user as any;
+    return this.gw.exec('notification', 'mark_as_read', {
+      notificationId: body.notificationId,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('notifications/mark-all-as-read')
+  async markAllAsRead(@Req() req: Request) {
+    const user = req.user as any;
+    return this.gw.exec('notification', 'mark_all_as_read', {
+      userId: user.id,
     });
   }
 }
