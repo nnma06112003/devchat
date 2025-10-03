@@ -117,7 +117,7 @@ export class NotificationService {
         filter.read = query.read;
       }
       if (query.type !== undefined) {
-        filter.type = query.type;
+        query.type === '' ? delete filter.type : (filter.type = query.type);
       }
 
       const page = query.page || 1;

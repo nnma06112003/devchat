@@ -528,8 +528,9 @@ export class GatewayController {
   @Post('notifications/mark-as-read')
   async markAsRead(@Body() body: any, @Req() req: Request) {
     const user = req.user as any;
+    console.log('Body mark as read:', body.id);
     return this.gw.exec('notification', 'mark_as_read', {
-      notificationId: body.notificationId,
+      notificationId: body.id,
     });
   }
 

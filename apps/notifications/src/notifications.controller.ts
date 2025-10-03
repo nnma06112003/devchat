@@ -19,7 +19,6 @@ export class NotificationController {
           data.type,
         );
       case 'get_notifications':
-        console.log('QUERY', data.query);
         return this.notificationService.getNotificationsForUser(
           data.userId,
           data.query,
