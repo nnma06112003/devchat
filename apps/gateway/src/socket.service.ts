@@ -245,10 +245,7 @@ export class ChatSocketService {
       //Kafka send event to notification service
 
       // ✅ Tăng unread CHO NGƯỜI KHÁC (không phải sender) – chỉ khi họ đã subscribe & không ở trong room
-      await this.incrementUnread(
-        String(message.channelId),
-        String(message.user.id),
-      );
+      
 
       if (res?.data) {
         const { channel, ...datas } = res.data;
@@ -287,6 +284,10 @@ export class ChatSocketService {
         }
       }
       }
+      await this.incrementUnread(
+        String(message.channelId),
+        String(message.user.id),
+      );
     } catch (err: any) {
       this.server.to(message.channelId).emit('receiveMessage', {
         ...pendingMsg,
