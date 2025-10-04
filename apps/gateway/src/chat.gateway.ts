@@ -107,6 +107,7 @@ export class ChatGateway
     @ConnectedSocket() client: AuthSocket,
   ) {
     const message = { user: client?.user, ...data };
+    console.log(`📩 Data message in channel ${message.channelId}:`, message);
     await this.chatSocketService.sendMessageToChannel(message);
   }
 }

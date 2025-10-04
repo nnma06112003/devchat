@@ -332,11 +332,16 @@ private async fetchFromGithubUrl(
   params: Record<string, any> = {}
 ) {
  // Đây là userid của người dùng chứ không phải installation_id
-  const user:any = await this.userRepo.findOne({ where: { id: (params?.installation_id ? params.installation_id : userId) } });
-  if (!user) throw new RpcCustomException("User not found", 404);  
-  const iatRes: InstallationAccessToken = await this.createInstallationAccessToken(
-    Number(user.github_installation_id)
-  );
+  const whereClause = params.installation_id
+  ? { github_installation_id: params.installation_id }
+  : { id: userId };
+
+  const user = await this.userRepo.findOne({ where: whereClause });
+  if (!user) throw new RpcCustomException("User not found", 404);
+
+  const installationId = Number(user.github_installation_id ?? params.installation_id);
+  const iatRes = await this.createInstallationAccessToken(installationId);
+
   //console.log('Fetching from iatRes iatRes:', iatRes?.token, 'installation_id', installation_id);
 
   // Xóa template {...} trong url (ví dụ commits{/sha} -> commits)

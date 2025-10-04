@@ -252,8 +252,16 @@ export class ChatSocketService {
 
       if (res?.data) {
         const { channel, ...datas } = res.data;
+        console.log(`📨 Message sent in channel ${message.channelId}:`,  {
+          ...datas,
+          type: typeMsg,
+          fakeID: tempId,
+          status: 'sent',
+        });
+        
         this.server.to(message.channelId).emit('receiveMessage', {
           ...datas,
+          type: typeMsg,
           fakeID: tempId,
           status: 'sent',
         });
