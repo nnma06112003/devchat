@@ -216,7 +216,10 @@ export class ChatSocketService {
       isMine: true,
       status: 'pending',
     };
-    this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
+    // Kiểm tra server tồn tại trước khi emit pending message
+    if (this.server) {
+      this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
+    }
 
     // Nếu channel chưa active → bật active & gửi cập nhật channel cho members đang online
     if (message.channelData && message.channelData.isActive === false) {
@@ -226,7 +229,7 @@ export class ChatSocketService {
         const statusStr = await this.redis.hget('user_status', uid);
         if (!statusStr) continue;
         const status = JSON.parse(statusStr);
-        if (status.online && status.socketId) {
+        if (status.online && status.socketId && this.server) {
           this.server.to(status.socketId).emit('receiveChannel', activeChannel);
 
           console.log(
@@ -241,21 +244,22 @@ export class ChatSocketService {
         ...message,
         send_at: now,
       });
-
-      //Kafka send event to notification service
-
-      // ✅ Tăng unread CHO NGƯỜI KHÁC (không phải sender) – chỉ khi họ đã subscribe & không ở trong room
       
-
-      if (res?.data) {
-        const { channel, ...datas } = res.data;
-        console.log(`📨 Message sent in channel ${message.channelId}:`,  {
-          ...datas,
-          type: typeMsg,
-          fakeID: tempId,
-          status: 'sent',
-        });
-        
+      // Kiểm tra response hợp lệ
+      if (!res || !res.data) {
+        throw new Error('Invalid response from chat service');
+      }
+      
+      const { channel, ...datas } = res.data;
+      console.log(`📨 Message sent in channel ${message.channelId}:`,  {
+        ...datas,
+        type: typeMsg,
+        fakeID: tempId,
+        status: 'sent',
+      });
+      
+      // Kiểm tra server tồn tại trước khi emit
+      if (this.server) {
         this.server.to(message.channelId).emit('receiveMessage', {
           ...datas,
           type: typeMsg,
@@ -263,37 +267,41 @@ export class ChatSocketService {
           status: 'sent',
         });
       }
-      const result = await this.gw.exec('notification', 'send_notification', {
-        ...res,
-        type:'message',
-      });
+      // const result = await this.gw.exec('notification', 'send_notification', {
+      //   ...res,
+      //   type:'message',
+      // });
 
-      if (result?.data) {
-        for (const notify of result?.data.notifications) {
-        const statusStr = await this.redis.hget('user_status', notify?.userId);
-        if (!statusStr) continue;
-        const status = JSON.parse(statusStr);
-        if (status.online && status.socketId) {
-          this.server.to(status.socketId).emit('receiveNotification', {
-            ...notify ,
-            fakeID: tempId,
-          });
-          console.log(
-            `📢 Sent channel to user ${notify?.userId} at socket ${status.socketId}`,
-          );
-        }
-      }
-      }
+      // if (result?.data) {
+      //   for (const notify of result?.data.notifications) {
+      //   const statusStr = await this.redis.hget('user_status', notify?.userId);
+      //   if (!statusStr) continue;
+      //   const status = JSON.parse(statusStr);
+      //   if (status.online && status.socketId && this.server) {
+      //     this.server.to(status.socketId).emit('receiveNotification', {
+      //       ...notify ,
+      //       fakeID: tempId,
+      //     });
+      //     console.log(
+      //       `📢 Sent channel to user ${notify?.userId} at socket ${status.socketId}`,
+      //     );
+      //   }
+      // }
+      // }
       await this.incrementUnread(
         String(message.channelId),
         String(message.user.id),
       );
     } catch (err: any) {
-      this.server.to(message.channelId).emit('receiveMessage', {
-        ...pendingMsg,
-        status: 'error',
-        msg: err?.message || 'Gửi tin nhắn thất bại',
-      });
+      console.error(`❌ Error sending message to channel ${message.channelId}:`, err);
+      
+      if (this.server) {
+        this.server.to(message.channelId).emit('receiveMessage', {
+          ...pendingMsg,
+          status: 'error',
+          msg: err?.message || 'Gửi tin nhắn thất bại',
+        });
+      }
     }
   }
 
