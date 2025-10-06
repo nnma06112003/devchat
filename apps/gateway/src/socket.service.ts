@@ -102,12 +102,12 @@ export class ChatSocketService {
   /* ===================== ROOM OPS ===================== */
   async joinChannel(client: AuthSocket, channelId: string) {
     // Nếu client đã ở trong room này thì không emit nữa
-    if (client.rooms.has(channelId)) {
-      console.log(
-        `⚠️ User ${client.user?.id} đã ở trong channel ${channelId}, không emit joinedRoom`,
-      );
-      return;
-    }
+    // if (client.rooms.has(channelId)) {
+    //   console.log(
+    //     `⚠️ User ${client.user?.id} đã ở trong channel ${channelId}, không emit joinedRoom`,
+    //   );
+    //   return;
+    // }
     client.join(channelId);
     await this.resetUnread(client, channelId);
     client.emit('joinedRoom', { channelId });
@@ -216,10 +216,7 @@ export class ChatSocketService {
       isMine: true,
       status: 'pending',
     };
-    // Kiểm tra server tồn tại trước khi emit pending message
-    if (this.server) {
-      this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
-    }
+   
 
     // Nếu channel chưa active → bật active & gửi cập nhật channel cho members đang online
     if (message.channelData && message.channelData.isActive === false) {
@@ -245,12 +242,8 @@ export class ChatSocketService {
         send_at: now,
       });
       
-      // Kiểm tra response hợp lệ
-      if (!res || !res.data) {
-        throw new Error('Invalid response from chat service');
-      }
       
-      const { channel, ...datas } = res.data;
+      const { channel, ...datas } = res?.data;
       console.log(`📨 Message sent in channel ${message.channelId}:`,  {
         ...datas,
         type: typeMsg,
@@ -259,14 +252,12 @@ export class ChatSocketService {
       });
       
       // Kiểm tra server tồn tại trước khi emit
-      if (this.server) {
-        this.server.to(message.channelId).emit('receiveMessage', {
+      this.server.to(message.channelId).emit('receiveMessage', {
           ...datas,
           type: typeMsg,
           fakeID: tempId,
           status: 'sent',
-        });
-      }
+      });
       const result = await this.gw.exec('notification', 'send_notification', {
         ...res,
         type:'message',
