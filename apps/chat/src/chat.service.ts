@@ -775,6 +775,7 @@ export class ChatService extends BaseService<Message> {
       items: pagedRepos.map((repo) => ({
         repo_id: repo.repo_id,
         user_id: repo.user?.id || null,
+        repo_installation : repo.user?.github_installation_id || null
       })),
     };
   }

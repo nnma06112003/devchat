@@ -368,7 +368,7 @@ private async fetchFromGithubUrl(
 
   
 async getMultipleReposInfo(
-  items: { repo_id: string; user_id: number }[],
+  items: { repo_id: string; user_id: number  , repo_installation:number }[],
 ) {
   const promises = items.map(item => {
       // Giả sử endpoint repo API dùng rawUrl dựa trên repo_id
@@ -383,6 +383,7 @@ async getMultipleReposInfo(
     return allData.map((data, index) => ({
       repo_id: items[index].repo_id,
       user_id: items[index].user_id,
+      repo_installation: items[index].repo_installation,
       repo_info: data
     }));
 }
