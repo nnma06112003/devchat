@@ -196,9 +196,20 @@ export class ChatSocketService {
     channelData?: any;
     json_data?: any;
   }) {
+    console.log(`🔍 [DEBUG] sendMessageToChannel called with:`, {
+      channelId: message.channelId,
+      type: message.type,
+      text: message.text?.substring(0, 100) + '...',
+      hasJsonData: !!message.json_data,
+      jsonDataType: typeof message.json_data
+    });
+
     const tempId = Date.now();
     const now = new Date().toISOString();
     const typeMsg = message.type ?? 'message';
+    
+    console.log(`🔍 [DEBUG] Message type: ${message.type} -> ${typeMsg}`);
+    
     // Emit pending vào room
     const pendingMsg: any = {
       id: tempId,
@@ -216,7 +227,21 @@ export class ChatSocketService {
       isMine: true,
       status: 'pending',
     };
-   
+
+    console.log(`🔍 [DEBUG] Pending message created:`, {
+      type: pendingMsg.type,
+      fakeID: pendingMsg.fakeID,
+      hasJsonData: !!pendingMsg.json_data
+    });
+
+    // Emit pending message to room
+    if (this.server) {
+      console.log(`🔍 [DEBUG] Emitting pending message to channel ${message.channelId}`);
+      this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
+      console.log(`✅ [DEBUG] Pending message emitted successfully`);
+    } else {
+      console.error(`❌ [DEBUG] Server not available for emitting pending message`);
+    }
 
     // Nếu channel chưa active → bật active & gửi cập nhật channel cho members đang online
     if (message.channelData && message.channelData.isActive === false) {
@@ -237,11 +262,22 @@ export class ChatSocketService {
     }
 
     try {
+      console.log(`🔍 [DEBUG] Calling chat service with:`, {
+        ...message,
+        send_at: now,
+        json_data_type: typeof message.json_data
+      });
+
       const res: any = await this.gw.exec('chat', 'sendMessage', {
         ...message,
         send_at: now,
       });
       
+      console.log(`🔍 [DEBUG] Chat service response:`, {
+        hasData: !!res?.data,
+        responseType: res?.data?.type,
+        dataKeys: res?.data ? Object.keys(res.data) : 'no data'
+      });
       
       const { channel, ...datas } = res?.data;
       console.log(`📨 Message sent in channel ${message.channelId}:`,  {
@@ -250,14 +286,23 @@ export class ChatSocketService {
         fakeID: tempId,
         status: 'sent',
       });
+
+      const finalMessage = {
+        ...datas,
+        type: typeMsg,
+        fakeID: tempId,
+        status: 'sent',
+      };
+
+      console.log(`🔍 [DEBUG] Final message to emit:`, {
+        type: finalMessage.type,
+        fakeID: finalMessage.fakeID,
+        hasJsonData: !!finalMessage.json_data,
+        id: finalMessage.id
+      });
       
       // Kiểm tra server tồn tại trước khi emit
-      this.server.to(message.channelId).emit('receiveMessage', {
-          ...datas,
-          type: typeMsg,
-          fakeID: tempId,
-          status: 'sent',
-      });
+      this.server.to(message.channelId).emit('receiveMessage', finalMessage);
       const result = await this.gw.exec('notification', 'send_notification', {
         ...res,
         type:'message',
@@ -284,14 +329,27 @@ export class ChatSocketService {
         String(message.user.id),
       );
     } catch (err: any) {
-      console.error(`❌ Error sending message to channel ${message.channelId}:`, err);
+      console.error(`❌ [DEBUG] Error sending message to channel ${message.channelId}:`, err);
+      console.error(`❌ [DEBUG] Error details:`, {
+        message: err?.message,
+        stack: err?.stack,
+        originalMessageType: message.type
+      });
       
       if (this.server) {
-        this.server.to(message.channelId).emit('receiveMessage', {
+        const errorMessage = {
           ...pendingMsg,
           status: 'error',
           msg: err?.message || 'Gửi tin nhắn thất bại',
+        };
+        
+        console.log(`🔍 [DEBUG] Emitting error message:`, {
+          type: errorMessage.type,
+          fakeID: errorMessage.fakeID,
+          status: errorMessage.status
         });
+        
+        this.server.to(message.channelId).emit('receiveMessage', errorMessage);
       }
     }
   }
