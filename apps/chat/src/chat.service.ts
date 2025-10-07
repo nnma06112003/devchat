@@ -207,9 +207,17 @@ export class ChatService extends BaseService<Message> {
   // Gửi tin nhắn vào channel
   async sendMessage(
     user: any,
-    data: { channelId: string; text: string; send_at: any },
+    data: { channelId: string; text: string; send_at: any; type?: string; json_data?: any },
     attachments?: any[],
   ) {
+    console.log(`🔍 [DEBUG] Chat service sendMessage called with:`, {
+      channelId: data.channelId,
+      type: data.type,
+      hasJsonData: !!data.json_data,
+      jsonDataType: typeof data.json_data,
+      text: data.text?.substring(0, 100) + '...'
+    });
+
     const channel = await this.check_exist_with_data(
       Channel,
       { id: data.channelId },
@@ -223,14 +231,31 @@ export class ChatService extends BaseService<Message> {
     if (!channel)
       throw new RpcException({ msg: 'Kênh chat không tồn tại', status: 404 });
 
-    const message = this.messageRepo.create({
+    const messageData = {
       ...data,
       channel,
       sender,
       send_at: data.send_at,
+      type: data.type || 'message',
+      json_data: data.json_data || null,
+    };
+
+    console.log(`🔍 [DEBUG] Creating message with data:`, {
+      type: messageData.type,
+      hasJsonData: !!messageData.json_data,
+      text: messageData.text?.substring(0, 50) + '...'
     });
 
+    const message = this.messageRepo.create(messageData);
+
     await this.messageRepo.save(message);
+
+    console.log(`🔍 [DEBUG] Message saved to database:`, {
+      id: message.id,
+      type: message.type,
+      hasJsonData: !!message.json_data,
+      text: message.text?.substring(0, 50) + '...'
+    });
 
     if (attachments && attachments.length > 0) {
       message.attachments = this.attachmentRepo.create(
@@ -268,6 +293,13 @@ export class ChatService extends BaseService<Message> {
     }
 
     // Nếu không phải message đầu tiên → chỉ trả về message
+    console.log(`🔍 [DEBUG] Returning message:`, {
+      id: message.id,
+      type: message.type,
+      hasJsonData: !!message.json_data,
+      text: message.text?.substring(0, 50) + '...'
+    });
+    
     return message;
   }
 
