@@ -32,7 +32,7 @@ export class UploadService {
           {
             AllowedHeaders: ['*'],
             AllowedMethods: ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
-            AllowedOrigins: ['http://localhost:8080', 'http://localhost:3088','https://thaibinhduong1802.id.vn/'],
+            AllowedOrigins: ['http://localhost:8080', 'http://localhost:3088','https://thaibinhduong1802.id.vn'],
             ExposeHeaders: ['ETag'],
             MaxAgeSeconds: 3000,
           },

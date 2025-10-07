@@ -77,28 +77,46 @@ export class NotificationService {
   }
 
   private async createGitHubNotification(data: any): Promise<any> {
-    const installationId = data?.installationId || data?.installation?.id;
-    console.log('GitHub installationId:', installationId);
+    try {
+      const installationId =
+        data?.installationId || data?.installation?.id || data?.github_installation_id;
+      this.logger.log(`GitHub installationId: ${installationId}`);
 
-    const user: any = await this.userRepository.findOneBy({
-      github_installation_id: installationId,
-    });
-    console.log('User found:', user);
+      if (!installationId) {
+        this.logger.warn('No installationId provided in GitHub payload, skipping notification creation');
+        return { notifications: [] };
+      }
 
-    const savedNotifications = [];
-    const notification = new this.notificationModel({
-      userId: user.id,
-      type: 'github',
-      data: data,
-      read: false,
-      createdAt: new Date(),
-    });
-    const savedNotification = await notification.save();
-    savedNotifications.push(savedNotification);
+      const user: any = await this.userRepository.findOneBy({
+        github_installation_id: installationId,
+      });
+      this.logger.log(`User found for installation ${installationId}: ${user ? user.id : 'null'}`);
 
-    return {
-      notifications: savedNotifications,
-    };
+      if (!user) {
+        // Do not throw — just log and return empty result so webhook processing doesn't crash the service
+        this.logger.warn(`No user found for GitHub installation ${installationId}. Skipping notification creation.`);
+        return { notifications: [] };
+      }
+
+      const savedNotifications: any[] = [];
+      const notification = new this.notificationModel({
+        userId: String(user.id),
+        type: 'github',
+        data: data,
+        read: false,
+        createdAt: new Date(),
+      });
+      const savedNotification = await notification.save();
+      savedNotifications.push(savedNotification);
+
+      return {
+        notifications: savedNotifications,
+      };
+    } catch (err: any) {
+      this.logger.error(`Error in createGitHubNotification: ${err?.message || err}`);
+      // Return empty result to avoid propagating an exception to the caller that would crash the microservice
+      return { notifications: [] };
+    }
   }
 
   // Lấy tất cả notification của user
