@@ -375,4 +375,29 @@ export class AuthService {
       throw new UnauthorizedException('Invalid signature');
     }
   }
+
+  //Upadate password
+  async updatePassword(
+    userId: string,
+    oldPassword: string,
+    newPassword: string,
+  ): Promise<any> {
+    const user: any = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      throw new RpcException({
+        msg: 'Mật khẩu cũ không chính xác',
+        status: 400,
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await this.userRepository.save(user);
+    return { status: 200, msg: 'Cập nhật mật khẩu thành công' };
+  }
 }

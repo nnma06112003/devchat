@@ -34,6 +34,12 @@ export class AuthController {
           data.signature,
           data.rawBody,
         );
+      case 'update_password':
+        return this.authService.updatePassword(
+          data.user.id,
+          data.oldPassword,
+          data.newPassword,
+        );
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }
