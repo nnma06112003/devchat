@@ -252,6 +252,13 @@ export class GatewayController {
     return this.gw.exec('auth', 'get_profile', { userId: user.id });
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('auth/update-password')
+  async update_password(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    return this.gw.exec('auth', 'update_password', { user, ...dto });
+  }
+
   // FE: POST /api/auth/refresh
   // Body: { refreshToken: string }
   @Post('auth/refresh-token')

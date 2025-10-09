@@ -1,5 +1,8 @@
 // apps/gateway/src/upload/upload.service.ts
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
+import { Attachment } from '@myorg/entities';
 import {
   S3Client,
   PutObjectCommand,
@@ -13,7 +16,10 @@ export class UploadService {
   private s3: S3Client;
   private bucket = process.env.CF_BUCKET!;
 
-  constructor() {
+  constructor(
+    @InjectRepository(Attachment)
+    private attachmentRepo: Repository<Attachment>,
+  ) {
     this.s3 = new S3Client({
       region: 'auto', // Cloudflare R2 không cần region thật
       endpoint: process.env.CF_ENDPOINT, // ví dụ: https://<accountid>.r2.cloudflarestorage.com
@@ -32,7 +38,11 @@ export class UploadService {
           {
             AllowedHeaders: ['*'],
             AllowedMethods: ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
-            AllowedOrigins: ['http://localhost:8080', 'http://localhost:3088','https://thaibinhduong1802.id.vn'],
+            AllowedOrigins: [
+              'http://localhost:8080',
+              'http://localhost:3088',
+              'https://thaibinhduong1802.id.vn',
+            ],
             ExposeHeaders: ['ETag'],
             MaxAgeSeconds: 3000,
           },
@@ -76,5 +86,82 @@ export class UploadService {
 
     const url = await getSignedUrl(this.s3, command, { expiresIn: 60 });
     return url;
+  }
+
+  //Get object by channel
+  async getAttachmentsByChannel(params: {
+    channelId: number | string;
+    limit?: number;
+    cursor?: number; // attachment.id để cursor-based pagination
+    filename?: string;
+    mimeType?: string;
+    senderId?: number | string;
+    startDate?: Date;
+    endDate?: Date;
+  }) {
+    const {
+      channelId,
+      limit = 20,
+      cursor,
+      filename,
+      mimeType,
+      senderId,
+      startDate,
+      endDate,
+    } = params;
+
+    const qb: SelectQueryBuilder<Attachment> = this.attachmentRepo
+      .createQueryBuilder('attachment')
+      .leftJoinAndSelect('attachment.message', 'message')
+      .leftJoinAndSelect('message.channel', 'channel')
+      .leftJoinAndSelect('message.sender', 'sender')
+      .where('channel.id = :channelId', { channelId })
+      .orderBy('attachment.created_at', 'DESC')
+      .addOrderBy('attachment.id', 'DESC') // tie-breaker cho cursor
+      .limit(limit);
+
+    // Cursor-based pagination (load more khi scroll)
+    if (cursor) {
+      qb.andWhere('attachment.id < :cursor', { cursor });
+    }
+
+    // Filter by filename (search)
+    if (filename) {
+      qb.andWhere('attachment.filename ILIKE :filename', {
+        filename: `%${filename}%`,
+      });
+    }
+
+    // Filter by mimeType
+    if (mimeType) {
+      qb.andWhere('attachment.mimeType = :mimeType', { mimeType });
+    }
+
+    // Filter by sender
+    if (senderId) {
+      qb.andWhere('sender.id = :senderId', { senderId });
+    }
+
+    // Filter by date range
+    if (startDate) {
+      qb.andWhere('attachment.created_at >= :startDate', { startDate });
+    }
+    if (endDate) {
+      qb.andWhere('attachment.created_at <= :endDate', { endDate });
+    }
+
+    const attachments = await qb.getMany();
+
+    // Trả về cursor mới (id của item cuối) để FE dùng cho lần load tiếp
+    const nextCursor =
+      attachments.length === limit
+        ? attachments[attachments.length - 1].id
+        : null;
+
+    return {
+      attachments,
+      nextCursor,
+      hasMore: attachments.length === limit,
+    };
   }
 }

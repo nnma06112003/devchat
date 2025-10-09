@@ -18,6 +18,8 @@ export class UploadController {
         );
       case 'getObject':
         return await this.UploadService.getObject(payload.data.key);
+      case 'getAttachmentsByChannel':
+        return await this.UploadService.getAttachmentsByChannel(payload.data);
       default:
         return { error: 'Unknown command' };
     }
