@@ -5,6 +5,7 @@ import Redis from 'ioredis';
 import { GatewayService } from './gateway.service';
 import { Message } from '@myorg/entities';
 import { json } from 'stream/consumers';
+import { channel } from 'diagnostics_channel';
 
 export type AuthSocket = Socket & { user?: { id: string } };
 
@@ -213,6 +214,7 @@ export class ChatSocketService {
     // Emit pending vào room
     const pendingMsg: any = {
       id: tempId,
+      channelId: message.channelId,
       fakeID: tempId,
       text: message.text,
       type: typeMsg,
@@ -228,17 +230,17 @@ export class ChatSocketService {
       status: 'pending',
     };
 
-    console.log(`🔍 [DEBUG] Pending message created:`, {
-      type: pendingMsg.type,
-      fakeID: pendingMsg.fakeID,
-      hasJsonData: !!pendingMsg.json_data
-    });
+    // console.log(`🔍 [DEBUG] Pending message created:`, {
+    //   type: pendingMsg.type,
+    //   fakeID: pendingMsg.fakeID,
+    //   hasJsonData: !!pendingMsg.json_data
+    // });
 
     // Emit pending message to room
     if (this.server) {
-      console.log(`🔍 [DEBUG] Emitting pending message to channel ${message.channelId}`);
+      //console.log(`🔍 [DEBUG] Emitting pending message to channel ${message.channelId}`);
       this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
-      console.log(`✅ [DEBUG] Pending message emitted successfully`);
+      //console.log(`✅ [DEBUG] Pending message emitted successfully`);
     } else {
       console.error(`❌ [DEBUG] Server not available for emitting pending message`);
     }
@@ -262,44 +264,46 @@ export class ChatSocketService {
     }
 
     try {
-      console.log(`🔍 [DEBUG] Calling chat service with:`, {
-        ...message,
-        send_at: now,
-        json_data_type: typeof message.json_data
-      });
+      // console.log(`🔍 [DEBUG] Calling chat service with:`, {
+      //   ...message,
+      //   send_at: now,
+      //   json_data_type: typeof message.json_data
+      // });
 
       const res: any = await this.gw.exec('chat', 'sendMessage', {
         ...message,
         send_at: now,
       });
       
-      console.log(`🔍 [DEBUG] Chat service response:`, {
-        hasData: !!res?.data,
-        responseType: res?.data?.type,
-        dataKeys: res?.data ? Object.keys(res.data) : 'no data'
-      });
+      // console.log(`🔍 [DEBUG] Chat service response:`, {
+      //   hasData: !!res?.data,
+      //   responseType: res?.data?.type,
+      //   dataKeys: res?.data ? Object.keys(res.data) : 'no data'
+      // });
       
       const { channel, ...datas } = res?.data;
-      console.log(`📨 Message sent in channel ${message.channelId}:`,  {
-        ...datas,
-        type: typeMsg,
-        fakeID: tempId,
-        status: 'sent',
-      });
+      // console.log(`📨 Message sent in channel ${message.channelId}:`,  {
+      //   ...datas,
+      //   channelId: message.channelId,
+      //   type: typeMsg,
+      //   fakeID: tempId,
+      //   status: 'sent',
+      // });
 
       const finalMessage = {
         ...datas,
+        channelId: message.channelId,
         type: typeMsg,
         fakeID: tempId,
         status: 'sent',
       };
 
-      console.log(`🔍 [DEBUG] Final message to emit:`, {
-        type: finalMessage.type,
-        fakeID: finalMessage.fakeID,
-        hasJsonData: !!finalMessage.json_data,
-        id: finalMessage.id
-      });
+      // console.log(`🔍 [DEBUG] Final message to emit:`, {
+      //   type: finalMessage.type,
+      //   fakeID: finalMessage.fakeID,
+      //   hasJsonData: !!finalMessage.json_data,
+      //   id: finalMessage.id
+      // });
       
       // Kiểm tra server tồn tại trước khi emit
       this.server.to(message.channelId).emit('receiveMessage', finalMessage);

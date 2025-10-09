@@ -525,6 +525,7 @@ export class ChatService extends BaseService<Message> {
 
       return {
         ...msg,
+        channelId: msg.channelId || (msg.channel ? msg.channel.id : null),
         sender: senderInfo,
         attachments,
         isMine,
