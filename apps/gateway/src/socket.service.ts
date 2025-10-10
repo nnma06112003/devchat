@@ -196,6 +196,7 @@ export class ChatSocketService {
     type?: string;
     channelData?: any;
     json_data?: any;
+    replyTo?: any;
   }) {
     console.log(`🔍 [DEBUG] sendMessageToChannel called with:`, {
       channelId: message.channelId,
@@ -221,6 +222,7 @@ export class ChatSocketService {
       created_at: now,
       updated_at: null,
       json_data: message.json_data ? { ...message.json_data } : null,
+      replyTo: message.replyTo ? { ...message.replyTo } : null,
       sender: {
         id: message.user.id,
         username: message.user.username,
