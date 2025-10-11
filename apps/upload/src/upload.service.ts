@@ -114,7 +114,8 @@ export class UploadService {
       .createQueryBuilder('attachment')
       .leftJoinAndSelect('attachment.message', 'message')
       .leftJoinAndSelect('message.channel', 'channel')
-      .leftJoinAndSelect('message.sender', 'sender')
+      .leftJoin('message.sender', 'sender')
+      .addSelect(['sender.id', 'sender.username', 'sender.email'])
       .where('channel.id = :channelId', { channelId })
       .orderBy('attachment.created_at', 'DESC')
       .addOrderBy('attachment.id', 'DESC') // tie-breaker cho cursor
