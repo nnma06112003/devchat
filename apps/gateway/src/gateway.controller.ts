@@ -425,6 +425,34 @@ export class GatewayController {
     return this.gw.exec('upload', 'getObject', payload);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('channels/:channelId/attachments')
+  async getAttachmentsByChannel(
+    @Param('channelId') channelId: string,
+    @Req() req: Request,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+    @Query('filename') filename?: string,
+    @Query('mimeType') mimeType?: string,
+    @Query('senderId') senderId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+    return this.gw.exec('upload', 'getAttachmentsByChannel', {
+      channelId: +channelId,
+      limit: limit ? +limit : undefined,
+      cursor: cursor ? +cursor : undefined,
+      filename,
+      mimeType,
+      senderId: senderId ? +senderId : undefined,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+    });
+  }
+
   // GITHUB
   @UseGuards(JwtAuthGuard)
   @Post('git/get_repo_installation')
