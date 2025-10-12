@@ -207,8 +207,9 @@ export class ChatService extends BaseService<Message> {
   // Gửi tin nhắn vào channel
   async sendMessage(
     user: any,
-    data: { channelId: string; text: string; send_at: any; type?: string; json_data?: any },
+    data: { channelId: string; text: string; send_at: any; type?: string; json_data?: any , id?:any , isUpdate?: boolean},
     attachments?: any[],
+    
   ) {
     console.log(`🔍 [DEBUG] Chat service sendMessage called with:`, {
       channelId: data.channelId,
@@ -230,6 +231,35 @@ export class ChatService extends BaseService<Message> {
     );
     if (!channel)
       throw new RpcException({ msg: 'Kênh chat không tồn tại', status: 404 });
+
+    // 👉 Update message if requested
+    if (data.isUpdate && data.id) {
+      const existing = await this.messageRepo.findOne({
+        where: { id: data.id, channel: { id: data.channelId } },
+        relations: ['sender', 'attachments', 'channel'],
+      });
+      if (!existing) {
+        throw new RpcException({ msg: 'Tin nhắn không tồn tại', status: 404 });
+      }
+      const existingSenderId = typeof existing.sender === 'object' ? existing.sender?.id : existing.sender;
+      if (String(existingSenderId) !== String(user.id)) {
+        throw new RpcException({ msg: 'Bạn không có quyền sửa hay xóa tin nhắn này', status: 403 });
+      }
+
+      existing.text = data.text ?? existing.text;
+      existing.json_data = data.json_data ?? existing.json_data;
+      existing.type = data.type ?? existing.type;
+
+      console.log('✏️ [DEBUG] Updating message:', {
+        id: existing.id,
+        type: existing.type,
+        hasJsonData: !!existing.json_data,
+        text: existing.text?.substring(0, 50) + '...'
+      });
+
+      await this.messageRepo.save(existing);
+      return existing;
+    }
 
     const messageData = {
       ...data,
@@ -557,7 +587,7 @@ export class ChatService extends BaseService<Message> {
     return {
       channel: channelInfo,
       members,
-      items, // THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
+      items,// THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
       total: null,
       page: null,
       pageSize,
