@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Like, Not, Repository } from 'typeorm';
 import { Attachment, Message, User } from '@myorg/entities';
 import { Channel } from '@myorg/entities';
 import { BaseService } from '@myorg/common';
@@ -209,14 +209,13 @@ export class ChatService extends BaseService<Message> {
     user: any,
     data: { channelId: string; text: string; send_at: any; type?: string; json_data?: any, isPin?: boolean, id?: any, isUpdate?: boolean },
     attachments?: any[],
-    
   ) {
     console.log(`🔍 [DEBUG] Chat service sendMessage called with:`, {
       channelId: data.channelId,
       type: data.type,
       hasJsonData: !!data.json_data,
       jsonDataType: typeof data.json_data,
-      text: data.text?.substring(0, 100) + '...'
+      text: data.text?.substring(0, 100) + '...',
     });
 
     const channel = await this.check_exist_with_data(
@@ -255,7 +254,7 @@ export class ChatService extends BaseService<Message> {
         id: existing.id,
         type: existing.type,
         hasJsonData: !!existing.json_data,
-        text: existing.text?.substring(0, 50) + '...'
+        text: existing.text?.substring(0, 50) + '...',
       });
 
       await this.messageRepo.save(existing);
@@ -274,7 +273,7 @@ export class ChatService extends BaseService<Message> {
     console.log(`🔍 [DEBUG] Creating message with data:`, {
       type: messageData.type,
       hasJsonData: !!messageData.json_data,
-      text: messageData.text?.substring(0, 50) + '...'
+      text: messageData.text?.substring(0, 50) + '...',
     });
 
     const message = this.messageRepo.create(messageData);
@@ -285,7 +284,7 @@ export class ChatService extends BaseService<Message> {
       id: message.id,
       type: message.type,
       hasJsonData: !!message.json_data,
-      text: message.text?.substring(0, 50) + '...'
+      text: message.text?.substring(0, 50) + '...',
     });
 
     if (attachments && attachments.length > 0) {
@@ -328,9 +327,9 @@ export class ChatService extends BaseService<Message> {
       id: message.id,
       type: message.type,
       hasJsonData: !!message.json_data,
-      text: message.text?.substring(0, 50) + '...'
+      text: message.text?.substring(0, 50) + '...',
     });
-    
+
     return message;
   }
 
@@ -370,8 +369,14 @@ export class ChatService extends BaseService<Message> {
         name: channelName,
         type: channel.type,
         member_count: channel.member_count,
-        members: (channel.users || []).map((u:any) =>
-          this.remove_field_user({ ...u , avatar: u.avatar || u.github_avatar || 'https://avatar.iran.liara.run/username?username='+u.username}),
+        members: (channel.users || []).map((u: any) =>
+          this.remove_field_user({
+            ...u,
+            avatar:
+              u.avatar ||
+              u.github_avatar ||
+              'https://avatar.iran.liara.run/username?username=' + u.username,
+          }),
         ),
         created_at: channel.created_at,
         updated_at: channel.updated_at,
@@ -532,7 +537,14 @@ export class ChatService extends BaseService<Message> {
 
       if (msg.sender) {
         if (typeof msg.sender === 'object') {
-          senderInfo = this.remove_field_user({ ...msg.sender , avatar: msg.sender.avatar || msg.sender.github_avatar || 'https://avatar.iran.liara.run/username?username='+msg.sender.username});
+          senderInfo = this.remove_field_user({
+            ...msg.sender,
+            avatar:
+              msg.sender.avatar ||
+              msg.sender.github_avatar ||
+              'https://avatar.iran.liara.run/username?username=' +
+                msg.sender.username,
+          });
           isMine = String(msg.sender.id) === String(user.id);
         } else {
           const senderObj = (channel.users || []).find(
@@ -574,11 +586,14 @@ export class ChatService extends BaseService<Message> {
     const nextAfter = newest?.id ?? null;
 
     // 6) Members tối giản
-    const members = (channel.users || []).map((u:any) => ({
+    const members = (channel.users || []).map((u: any) => ({
       id: u.id,
       username: u.username,
       email: u.email,
-      avatar: u.avatar || u.github_avatar || 'https://avatar.iran.liara.run/username?username='+u.username,
+      avatar:
+        u.avatar ||
+        u.github_avatar ||
+        'https://avatar.iran.liara.run/username?username=' + u.username,
       isMine: String(u.id) === String(user.id),
       isOwner: channel.owner && String(u.id) === String(channel.owner.id),
     }));
@@ -588,7 +603,7 @@ export class ChatService extends BaseService<Message> {
     return {
       channel: channelInfo,
       members,
-      items,// THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
+      items, // THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
       total: null,
       page: null,
       pageSize,
@@ -724,11 +739,14 @@ export class ChatService extends BaseService<Message> {
   async addRepositoriesToChannel(
     userId: string | number,
     channelId: string | number,
-    repoIds: string[]
+    repoIds: string[],
   ) {
     // 1. Kiểm tra danh sách repo_id hợp lệ
     if (!Array.isArray(repoIds) || repoIds.length === 0) {
-      throw new RpcException({ msg: 'Danh sách Repository không hợp lệ', status: 400 });
+      throw new RpcException({
+        msg: 'Danh sách Repository không hợp lệ',
+        status: 400,
+      });
     }
 
     // 2. Kiểm tra user tồn tại và đã có installation_id
@@ -737,7 +755,10 @@ export class ChatService extends BaseService<Message> {
       throw new RpcException({ msg: 'Không tìm thấy user', status: 404 });
     }
     if (!user.github_installation_id) {
-      throw new RpcException({ msg: 'User chưa cài đặt GitHub App', status: 400 });
+      throw new RpcException({
+        msg: 'User chưa cài đặt GitHub App',
+        status: 400,
+      });
     }
 
     // 3. Kiểm tra channel tồn tại và user là thành viên
@@ -748,9 +769,14 @@ export class ChatService extends BaseService<Message> {
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
     }
-    const isMember = channel.users.some((u) => String(u.id) === String(user.id));
+    const isMember = channel.users.some(
+      (u) => String(u.id) === String(user.id),
+    );
     if (!isMember) {
-      throw new RpcException({ msg: 'Bạn không phải thành viên của kênh này', status: 403 });
+      throw new RpcException({
+        msg: 'Bạn không phải thành viên của kênh này',
+        status: 403,
+      });
     }
 
     // 4. Kiểm tra repo đã liên kết với channel chưa
@@ -760,22 +786,33 @@ export class ChatService extends BaseService<Message> {
         where: { repo_id: rpid, user: { id: user.id } },
         relations: ['channels'],
       });
-      if (repo && repo.channels?.some((c) => String(c.id) === String(channel.id))) {
-        throw new RpcException({ msg: `Không được thêm trùng Repository`, status: 400 });
+      if (
+        repo &&
+        repo.channels?.some((c) => String(c.id) === String(channel.id))
+      ) {
+        throw new RpcException({
+          msg: `Không được thêm trùng Repository`,
+          status: 400,
+        });
       }
     }
 
     // 5. Thêm các repo vào DB (nếu chưa có), liên kết với user và channel
     const repos: RepoEntity[] = [];
     for (const rpid of repoIds) {
-      let repo = await repoRepo.findOne({ where: { repo_id: rpid, user: { id: user.id } }, relations: ['channels'] });
+      let repo = await repoRepo.findOne({
+        where: { repo_id: rpid, user: { id: user.id } },
+        relations: ['channels'],
+      });
       if (!repo) {
         repo = repoRepo.create({ repo_id: rpid, user });
         await repoRepo.save(repo);
       }
       // Liên kết repo với channel nếu chưa có
       if (!repo.channels) repo.channels = [];
-      const alreadyLinked = repo.channels.some((c) => String(c.id) === String(channel.id));
+      const alreadyLinked = repo.channels.some(
+        (c) => String(c.id) === String(channel.id),
+      );
       if (!alreadyLinked) {
         repo.channels.push(channel);
         await repoRepo.save(repo);
@@ -795,10 +832,10 @@ export class ChatService extends BaseService<Message> {
     userId: string | number,
     channelId: string | number,
     data: {
-      order?: 'asc' | 'desc',
-      limit?: number,
-      page?: number
-    }
+      order?: 'asc' | 'desc';
+      limit?: number;
+      page?: number;
+    },
   ) {
     // Set default values
     const order = data.order ?? 'asc';
@@ -815,7 +852,10 @@ export class ChatService extends BaseService<Message> {
     }
     const isMember = channel.users.some((u) => String(u.id) === String(userId));
     if (!isMember) {
-      throw new RpcException({ msg: 'Bạn không phải thành viên của kênh này', status: 403 });
+      throw new RpcException({
+        msg: 'Bạn không phải thành viên của kênh này',
+        status: 403,
+      });
     }
 
     // 2. Lấy danh sách repo, sort theo id
@@ -823,7 +863,7 @@ export class ChatService extends BaseService<Message> {
     repos.sort((a, b) =>
       order === 'asc'
         ? Number(a.id) - Number(b.id)
-        : Number(b.id) - Number(a.id)
+        : Number(b.id) - Number(a.id),
     );
 
     // 3. Phân trang
@@ -840,7 +880,7 @@ export class ChatService extends BaseService<Message> {
       items: pagedRepos.map((repo) => ({
         repo_id: repo.repo_id,
         user_id: repo.user?.id || null,
-        repo_installation : repo.user?.github_installation_id || null
+        repo_installation: repo.user?.github_installation_id || null,
       })),
     };
   }
@@ -848,20 +888,26 @@ export class ChatService extends BaseService<Message> {
   async removeRepositoryFromChannel(
     userId: string | number,
     channelId: string | number,
-    repoId: string | number
+    repoId: string | number,
   ) {
     // 1. Kiểm tra user tồn tại
     const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) throw new RpcException({ msg: 'Không tìm thấy user', status: 404 });
+    if (!user)
+      throw new RpcException({ msg: 'Không tìm thấy user', status: 404 });
 
     // 2. Kiểm tra channel tồn tại và user là thành viên
     const channel = await this.channelRepo.findOne({
       where: { id: channelId },
       relations: ['users', 'repositories', 'owner'],
     });
-    if (!channel) throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    if (!channel)
+      throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
     const isMember = channel.users.some((u) => String(u.id) === String(userId));
-    if (!isMember) throw new RpcException({ msg: 'Bạn không phải thành viên của kênh này', status: 403 });
+    if (!isMember)
+      throw new RpcException({
+        msg: 'Bạn không phải thành viên của kênh này',
+        status: 403,
+      });
 
     // 3. Kiểm tra repo tồn tại trong channel
     const repoRepo = this.attachmentRepo.manager.getRepository(RepoEntity);
@@ -869,22 +915,172 @@ export class ChatService extends BaseService<Message> {
       where: { repo_id: String(repoId) },
       relations: ['channels', 'user'],
     });
-    if (!repo || !repo.channels.some((c) => String(c.id) === String(channelId))) {
-      throw new RpcException({ msg: 'Repository không tồn tại trong kênh này', status: 404 });
+    if (
+      !repo ||
+      !repo.channels.some((c) => String(c.id) === String(channelId))
+    ) {
+      throw new RpcException({
+        msg: 'Repository không tồn tại trong kênh này',
+        status: 404,
+      });
     }
 
     // 4. Kiểm tra quyền xóa: user là chủ repo hoặc owner channel
     const isRepoOwner = String(repo.user.id) === String(userId);
-    const isChannelOwner = channel.owner && String(channel.owner.id) === String(userId);
+    const isChannelOwner =
+      channel.owner && String(channel.owner.id) === String(userId);
     if (!isRepoOwner && !isChannelOwner) {
-      throw new RpcException({ msg: 'Bạn không có quyền xóa repository này khỏi kênh', status: 403 });
+      throw new RpcException({
+        msg: 'Bạn không có quyền xóa repository này khỏi kênh',
+        status: 403,
+      });
     }
 
     // 5. Xóa liên kết repo khỏi channel
-    repo.channels = repo.channels.filter((c) => String(c.id) !== String(channelId));
+    repo.channels = repo.channels.filter(
+      (c) => String(c.id) !== String(channelId),
+    );
     await repoRepo.save(repo);
 
-    return { msg: 'Đã xóa repository khỏi kênh', repo_id: repoId, channel_id: channelId };
+    return {
+      msg: 'Đã xóa repository khỏi kênh',
+      repo_id: repoId,
+      channel_id: channelId,
+    };
   }
 
+  async addMembersToChannel(
+    userId: string | number,
+    channelId: string | number,
+    memberIds: (string | number)[],
+  ) {
+    // 1. Kiểm tra danh sách memberIds hợp lệ
+    if (!Array.isArray(memberIds) || memberIds.length === 0) {
+      throw new RpcException({
+        msg: 'Danh sách thành viên không hợp lệ',
+        status: 400,
+      });
+    }
+
+    // 2. Kiểm tra channel tồn tại
+    const channel = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['users'],
+    });
+    if (!channel) {
+      throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    }
+
+    // 3. Kiểm tra user là owner của channel
+    const isOwner = String(channel?.owner?.id) === String(userId);
+    if (!isOwner) {
+      throw new RpcException({
+        msg: 'Bạn không có quyền thêm thành viên vào kênh này',
+        status: 403,
+      });
+    }
+
+    // 4. Thêm thành viên vào channel
+    const users = await this.userRepo.findBy({ id: In(memberIds) });
+    channel.users.push(...users);
+    await this.channelRepo.save(channel);
+
+    return {
+      msg: 'Đã thêm thành viên vào kênh',
+      channel_id: channelId,
+      member_ids: memberIds,
+    };
+  }
+
+  async removeMembersFromChannel(
+    userId: string | number,
+    channelId: string | number,
+    memberIds: (string | number)[],
+  ) {
+    // 1. Kiểm tra danh sách memberIds hợp lệ
+    if (!Array.isArray(memberIds) || memberIds.length === 0) {
+      throw new RpcException({
+        msg: 'Danh sách thành viên không hợp lệ',
+        status: 400,
+      });
+    }
+    // 2. Kiểm tra channel tồn tại
+    const channel = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['users'],
+    });
+    if (!channel) {
+      throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    }
+    // 3. Kiểm tra user là owner của channel
+    const isOwner = String(channel?.owner?.id) === String(userId);
+    if (!isOwner) {
+      throw new RpcException({
+        msg: 'Bạn không có quyền xóa thành viên khỏi kênh này',
+        status: 403,
+      });
+    }
+    // 4. Xóa thành viên khỏi channel
+    channel.users = channel.users.filter((u) => !memberIds.includes(u.id));
+    await this.channelRepo.save(channel);
+    return {
+      msg: 'Đã xóa thành viên khỏi kênh',
+      channel_id: channelId,
+      member_ids: memberIds,
+    };
+  }
+
+  //list member that not in channel
+  async listNonMembers(
+    channelId: string | number,
+    username?: string,
+    limit?: number,
+    cursor?: number | string,
+  ) {
+    limit = limit ?? 20;
+
+    const channel = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['users'],
+    });
+
+    if (!channel) {
+      throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    }
+
+    const memberIds = channel.users.map((u) => u.id);
+
+    const qb = this.userRepo
+      .createQueryBuilder('user')
+      .where('user.id NOT IN (:...memberIds)', {
+        memberIds: memberIds.length > 0 ? memberIds : [0],
+      })
+      .orderBy('user.id', 'ASC')
+      .take(limit + 1);
+
+    // Cursor pagination: chỉ lấy users có id > cursor
+    if (cursor) {
+      qb.andWhere('user.id > :cursor', { cursor });
+    }
+
+    if (username && username.trim()) {
+      qb.andWhere('LOWER(user.username) LIKE :username', {
+        username: `%${username.trim().toLowerCase()}%`,
+      });
+    }
+
+    const users = await qb
+      .select(['user.id', 'user.username', 'user.email'])
+      .getMany();
+
+    const hasMore = users.length > limit;
+    const items = users.slice(0, limit);
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+    return {
+      items: items.map((u) => this.remove_field_user({ ...u })),
+      nextCursor,
+      hasMore,
+    };
+  }
 }

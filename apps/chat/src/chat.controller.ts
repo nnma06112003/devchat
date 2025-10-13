@@ -39,26 +39,46 @@ export class ChatController {
           payload.data.user,
           payload.data,
         );
-      
-       case 'addRepositoriesToChannel':
+
+      case 'addRepositoriesToChannel':
         return await this.chatService.addRepositoriesToChannel(
           payload.data.user.id,
           payload.data.channel_id,
           payload.data.repository_ids,
         );
 
-       case 'listRepositoriesByChannel':
+      case 'listRepositoriesByChannel':
         return await this.chatService.listRepositoriesByChannel(
           payload.data.user.id,
           payload.data.channel_id,
           payload.data,
         );
-      
+
       case 'removeRepositoriesFromChannel':
         return await this.chatService.removeRepositoryFromChannel(
           payload.data.user.id,
           payload.data.channel_id,
           payload.data.repository_id,
+        );
+
+      case 'addMembersToChannel':
+        return await this.chatService.addMembersToChannel(
+          payload.data.user.id,
+          payload.data.channel_id,
+          payload.data.member_ids,
+        );
+      case 'removeMembersFromChannel':
+        return await this.chatService.removeMembersFromChannel(
+          payload.data.user.id,
+          payload.data.channel_id,
+          payload.data.member_ids,
+        );
+      case 'listNonMembers':
+        return await this.chatService.listNonMembers(
+          payload.data.channel_id,
+          payload.data.username,
+          payload.data.limit,
+          payload.data.cursor,
         );
       default:
         return { error: 'Unknown command' };
