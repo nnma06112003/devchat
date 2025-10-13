@@ -135,7 +135,9 @@ export class UploadService {
 
     // Filter by mimeType
     if (mimeType) {
-      qb.andWhere('attachment.mimeType = :mimeType', { mimeType });
+      qb.andWhere('attachment.mimeType ILIKE :mimeType', {
+        mimeType: `%${mimeType}%`,
+      });
     }
 
     // Filter by sender
