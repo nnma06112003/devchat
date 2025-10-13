@@ -196,6 +196,7 @@ export class ChatSocketService {
     type?: string;
     channelData?: any;
     json_data?: any;
+    like_data?: any;
     replyTo?: any;
     isUpdate?: boolean;
     isPin?: boolean;
@@ -227,6 +228,7 @@ export class ChatSocketService {
       isPin: message.isPin ?? false,
       json_data: message.json_data ? { ...message.json_data } : null,
       replyTo: message.replyTo ? { ...message.replyTo } : null,
+      like_data: message.like_data ? { ...message.like_data } : null,
       sender: {
         id: message.user.id,
         username: message.user.username,

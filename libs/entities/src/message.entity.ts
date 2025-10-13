@@ -46,13 +46,15 @@ export class Message {
   @Column({ type: 'jsonb', nullable: true })
   replyTo?: any;
 
+  @Column({ type: 'jsonb', nullable: true })
+  like_data?: any;
+
   @OneToMany(() => Attachment, (a) => a.message, { cascade: true })
   attachments: Attachment[];
 
   @Column({ type: 'timestamp', nullable: true })
   send_at?: Date;
   
-
   @CreateDateColumn()
   created_at: Date;
 
