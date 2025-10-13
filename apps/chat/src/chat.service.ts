@@ -978,7 +978,7 @@ export class ChatService extends BaseService<Message> {
     // 2. Kiểm tra channel tồn tại
     const channel = await this.channelRepo.findOne({
       where: { id: channelId },
-      relations: ['users'],
+      relations: ['users', 'owner'],
     });
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
@@ -1091,7 +1091,7 @@ export class ChatService extends BaseService<Message> {
     const nextCursor = hasMore ? items[items.length - 1].id : null;
 
     return {
-      items: items.map((u) => this.remove_field_user({ ...u })),
+      users: items.map((u) => this.remove_field_user({ ...u })),
       nextCursor,
       hasMore,
     };
