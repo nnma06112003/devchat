@@ -24,8 +24,8 @@ export class UserSeeder {
       email_verified: true,
     });
 
-    // 5 user thường
-    const users = Array.from({ length: 5 }).map((_, i) =>
+    // 100 user thường
+    const users = Array.from({ length: 100 }).map((_, i) =>
       repo.create({
         username: `user${i + 1}`,
         email: `user${i + 1}@example.com`,
@@ -37,6 +37,6 @@ export class UserSeeder {
 
     await repo.save([admin, ...users]);
 
-    console.log('✅ User seeding done! (1 admin + 5 users)');
+    console.log('✅ User seeding done! (1 admin + 100 users)');
   }
 }

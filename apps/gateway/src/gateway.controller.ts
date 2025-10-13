@@ -408,6 +408,39 @@ export class GatewayController {
     });
   }
 
+  // Thêm thành viên vào channel
+  @UseGuards(JwtAuthGuard)
+  @Post('channels/add-members')
+  async addMembersToChannel(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'addMembersToChannel', payload);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('channels/remove-members')
+  async removeMembersFromChannel(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'removeMembersFromChannel', payload);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('channels/:channelId/list-non-members')
+  async listNonMembers(
+    @Param('channelId') channelId: string,
+    @Query('username') username: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.gw.exec('chat', 'listNonMembers', {
+      channelId,
+      username,
+      limit,
+      cursor,
+    });
+  }
+
   //Upload file
   @UseGuards(JwtAuthGuard)
   @Post('upload/get-presigned-url')
