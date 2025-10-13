@@ -207,7 +207,7 @@ export class ChatService extends BaseService<Message> {
   // Gửi tin nhắn vào channel
   async sendMessage(
     user: any,
-    data: { channelId: string; text: string; send_at: any; type?: string; json_data?: any , id?:any , isUpdate?: boolean},
+    data: { channelId: string; text: string; send_at: any; type?: string; json_data?: any, isPin?: boolean, id?: any, isUpdate?: boolean },
     attachments?: any[],
     
   ) {
@@ -242,13 +242,14 @@ export class ChatService extends BaseService<Message> {
         throw new RpcException({ msg: 'Tin nhắn không tồn tại', status: 404 });
       }
       const existingSenderId = typeof existing.sender === 'object' ? existing.sender?.id : existing.sender;
-      if (String(existingSenderId) !== String(user.id)) {
+      if (String(existingSenderId) !== String(user.id) && data.type== 'remove') {
         throw new RpcException({ msg: 'Bạn không có quyền sửa hay xóa tin nhắn này', status: 403 });
       }
 
       existing.text = data.text ?? existing.text;
       existing.json_data = data.json_data ?? existing.json_data;
       existing.type = data.type ?? existing.type;
+      existing.isPin = data.isPin ?? existing.isPin;
 
       console.log('✏️ [DEBUG] Updating message:', {
         id: existing.id,

@@ -40,6 +40,9 @@ export class Message {
   @Column({ type: 'jsonb', nullable: true })
   json_data?: any;
 
+  @Column({ type: 'boolean', default: false })
+  isPin: boolean;
+
   @Column({ type: 'jsonb', nullable: true })
   replyTo?: any;
 
@@ -48,6 +51,7 @@ export class Message {
 
   @Column({ type: 'timestamp', nullable: true })
   send_at?: Date;
+  
 
   @CreateDateColumn()
   created_at: Date;
