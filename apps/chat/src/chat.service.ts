@@ -207,15 +207,7 @@ export class ChatService extends BaseService<Message> {
   // Gửi tin nhắn vào channel
   async sendMessage(
     user: any,
-    data: {
-      channelId: string;
-      text: string;
-      send_at: any;
-      type?: string;
-      json_data?: any;
-      id?: any;
-      isUpdate?: boolean;
-    },
+    data: { channelId: string; text: string; send_at: any; type?: string; like_data?: any, json_data?: any, isPin?: boolean, id?: any, isUpdate?: boolean },
     attachments?: any[],
   ) {
     console.log(`🔍 [DEBUG] Chat service sendMessage called with:`, {
@@ -248,20 +240,16 @@ export class ChatService extends BaseService<Message> {
       if (!existing) {
         throw new RpcException({ msg: 'Tin nhắn không tồn tại', status: 404 });
       }
-      const existingSenderId =
-        typeof existing.sender === 'object'
-          ? existing.sender?.id
-          : existing.sender;
-      if (String(existingSenderId) !== String(user.id)) {
-        throw new RpcException({
-          msg: 'Bạn không có quyền sửa hay xóa tin nhắn này',
-          status: 403,
-        });
+      const existingSenderId = typeof existing.sender === 'object' ? existing.sender?.id : existing.sender;
+      if (String(existingSenderId) !== String(user.id) && data.type== 'remove') {
+        throw new RpcException({ msg: 'Bạn không có quyền sửa hay xóa tin nhắn này', status: 403 });
       }
 
       existing.text = data.text ?? existing.text;
       existing.json_data = data.json_data ?? existing.json_data;
       existing.type = data.type ?? existing.type;
+      existing.isPin = data.isPin ?? existing.isPin;
+      existing.like_data = data.like_data ?? existing.like_data;
 
       console.log('✏️ [DEBUG] Updating message:', {
         id: existing.id,
@@ -469,7 +457,6 @@ export class ChatService extends BaseService<Message> {
       .createQueryBuilder('message')
       .leftJoinAndSelect('message.sender', 'sender')
       .leftJoinAndSelect('message.attachments', 'attachment')
-      // nếu FK là snake_case thì đổi thành 'message.channel_id'
       .where('message.channelId = :channelId', { channelId });
 
     if (options?.since) {

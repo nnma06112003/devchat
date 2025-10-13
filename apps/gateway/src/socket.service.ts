@@ -196,8 +196,10 @@ export class ChatSocketService {
     type?: string;
     channelData?: any;
     json_data?: any;
+    like_data?: any;
     replyTo?: any;
     isUpdate?: boolean;
+    isPin?: boolean;
     id?: string | number;
   }) {
     console.log(`🔍 [DEBUG] sendMessageToChannel called with:`, {
@@ -223,8 +225,10 @@ export class ChatSocketService {
       type: typeMsg,
       created_at: now,
       updated_at: null,
+      isPin: message.isPin ?? false,
       json_data: message.json_data ? { ...message.json_data } : null,
       replyTo: message.replyTo ? { ...message.replyTo } : null,
+      like_data: message.like_data ? { ...message.like_data } : null,
       sender: {
         id: message.user.id,
         username: message.user.username,
@@ -300,6 +304,7 @@ export class ChatSocketService {
         channelId: message.channelId,
         type: typeMsg,
         fakeID: tempId,
+        isPin: pendingMsg.isPin ?? false,
         isUpdate: message.isUpdate ?? false,
         id: message.isUpdate ? message.id : null ,
         status: pendingMsg.isUpdated ? (typeMsg === 'remove' ? 'remove' : 'updated') : 'sent',
