@@ -197,6 +197,8 @@ export class ChatSocketService {
     channelData?: any;
     json_data?: any;
     replyTo?: any;
+    isUpdate?: boolean;
+    id?: string | number;
   }) {
     console.log(`🔍 [DEBUG] sendMessageToChannel called with:`, {
       channelId: message.channelId,
@@ -214,7 +216,7 @@ export class ChatSocketService {
     
     // Emit pending vào room
     const pendingMsg: any = {
-      id: tempId,
+      id: message.isUpdate ? message.id : tempId,
       channelId: message.channelId,
       fakeID: tempId,
       text: message.text,
@@ -229,6 +231,7 @@ export class ChatSocketService {
         email: message.user.email,
       },
       isMine: true,
+      isUpdate: message.isUpdate ?? false,
       status: 'pending',
     };
 
@@ -297,7 +300,9 @@ export class ChatSocketService {
         channelId: message.channelId,
         type: typeMsg,
         fakeID: tempId,
-        status: 'sent',
+        isUpdate: message.isUpdate ?? false,
+        id: message.isUpdate ? message.id : null ,
+        status: pendingMsg.isUpdated ? (typeMsg === 'remove' ? 'remove' : 'updated') : 'sent',
       };
 
       // console.log(`🔍 [DEBUG] Final message to emit:`, {

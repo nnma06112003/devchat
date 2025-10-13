@@ -21,7 +21,7 @@ export class Message {
 
   @Column({
     type: 'enum',
-    enum: ['message', 'reply-message' ,'notification', 'system','code-share','file-upload','code-card'],
+    enum: ['message','reply-message','remove','notification', 'system','code-share','file-upload','code-card'],
     default: 'message',
   })
   type: string;

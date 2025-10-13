@@ -213,6 +213,8 @@ export class ChatService extends BaseService<Message> {
       send_at: any;
       type?: string;
       json_data?: any;
+      id?: any;
+      isUpdate?: boolean;
     },
     attachments?: any[],
   ) {
@@ -236,6 +238,41 @@ export class ChatService extends BaseService<Message> {
     );
     if (!channel)
       throw new RpcException({ msg: 'Kênh chat không tồn tại', status: 404 });
+
+    // 👉 Update message if requested
+    if (data.isUpdate && data.id) {
+      const existing = await this.messageRepo.findOne({
+        where: { id: data.id, channel: { id: data.channelId } },
+        relations: ['sender', 'attachments', 'channel'],
+      });
+      if (!existing) {
+        throw new RpcException({ msg: 'Tin nhắn không tồn tại', status: 404 });
+      }
+      const existingSenderId =
+        typeof existing.sender === 'object'
+          ? existing.sender?.id
+          : existing.sender;
+      if (String(existingSenderId) !== String(user.id)) {
+        throw new RpcException({
+          msg: 'Bạn không có quyền sửa hay xóa tin nhắn này',
+          status: 403,
+        });
+      }
+
+      existing.text = data.text ?? existing.text;
+      existing.json_data = data.json_data ?? existing.json_data;
+      existing.type = data.type ?? existing.type;
+
+      console.log('✏️ [DEBUG] Updating message:', {
+        id: existing.id,
+        type: existing.type,
+        hasJsonData: !!existing.json_data,
+        text: existing.text?.substring(0, 50) + '...',
+      });
+
+      await this.messageRepo.save(existing);
+      return existing;
+    }
 
     const messageData = {
       ...data,
@@ -345,8 +382,14 @@ export class ChatService extends BaseService<Message> {
         name: channelName,
         type: channel.type,
         member_count: channel.member_count,
-        members: (channel.users || []).map((u) =>
-          this.remove_field_user({ ...u }),
+        members: (channel.users || []).map((u: any) =>
+          this.remove_field_user({
+            ...u,
+            avatar:
+              u.avatar ||
+              u.github_avatar ||
+              'https://avatar.iran.liara.run/username?username=' + u.username,
+          }),
         ),
         created_at: channel.created_at,
         updated_at: channel.updated_at,
@@ -507,7 +550,14 @@ export class ChatService extends BaseService<Message> {
 
       if (msg.sender) {
         if (typeof msg.sender === 'object') {
-          senderInfo = this.remove_field_user({ ...msg.sender });
+          senderInfo = this.remove_field_user({
+            ...msg.sender,
+            avatar:
+              msg.sender.avatar ||
+              msg.sender.github_avatar ||
+              'https://avatar.iran.liara.run/username?username=' +
+                msg.sender.username,
+          });
           isMine = String(msg.sender.id) === String(user.id);
         } else {
           const senderObj = (channel.users || []).find(
@@ -549,10 +599,14 @@ export class ChatService extends BaseService<Message> {
     const nextAfter = newest?.id ?? null;
 
     // 6) Members tối giản
-    const members = (channel.users || []).map((u) => ({
+    const members = (channel.users || []).map((u: any) => ({
       id: u.id,
       username: u.username,
       email: u.email,
+      avatar:
+        u.avatar ||
+        u.github_avatar ||
+        'https://avatar.iran.liara.run/username?username=' + u.username,
       isMine: String(u.id) === String(user.id),
       isOwner: channel.owner && String(u.id) === String(channel.owner.id),
     }));
