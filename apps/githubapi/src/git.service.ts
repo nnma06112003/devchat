@@ -429,7 +429,7 @@ async githubAppSetup(userId: string, installationId: number, userToken?: string)
 
   const user: any = await this.userRepo.findOne({ where: { id: userId  } });
   if (!user) throw new RpcCustomException('User not found', 404);
-  // await this.updateGithubUserInfoIfChanged(userId, userToken);
+  //await this.updateGithubUserInfoIfChanged(userId, userToken);
   user.github_installation_id = String(installationId);
   await this.userRepo.save(user);
   return {
@@ -439,7 +439,7 @@ async githubAppSetup(userId: string, installationId: number, userToken?: string)
     github_email: user.github_email,
     github_avatar: user.github_avatar,
   };
-  }
+}
   
 async updateGithubUserInfoIfChanged(userId: string,userToken: string) {
   const user: any = await this.userRepo.findOne({ where: { id: userId } });

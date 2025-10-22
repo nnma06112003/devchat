@@ -610,4 +610,13 @@ export class GatewayController {
       userId: user.id,
     });
   }
+
+   @UseGuards(JwtAuthGuard)
+    @Post('notifications/count-unread')
+    async countUnreadNotifications(@Req() req: Request) {
+      const user = req.user as any;
+      return this.gw.exec('notification', 'get_number_unread_notifications', {
+        userId: user.id,
+      });
+    }
 }

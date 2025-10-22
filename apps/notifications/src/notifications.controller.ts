@@ -23,6 +23,10 @@ export class NotificationController {
           data.userId,
           data.query,
         );
+      case 'get_number_unread_notifications':
+        return this.notificationService.getNumberOfUnreadNotifications(
+          data.userId,
+        );
       case 'mark_as_read':
         return this.notificationService.markAsRead(data.notificationId);
       case 'mark_all_as_read':

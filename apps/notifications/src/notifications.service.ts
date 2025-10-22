@@ -256,4 +256,26 @@ export class NotificationService {
   //     throw error;
   //   }
   // }
+
+
+  // Lấy số lượng thông báo chưa đọc của user
+async getNumberOfUnreadNotifications(userId: string): Promise<number> {
+  try {
+    const unreadCount = await this.notificationModel
+      .countDocuments({ 
+        userId: userId,
+        read: false 
+      })
+      .exec();
+
+    this.logger.log(`User ${userId} has ${unreadCount} unread notifications`);
+    return unreadCount;
+  } catch (error: any) {
+    this.logger.error(
+      `Error getting unread notifications count for user ${userId}: ${error.message}`,
+      error.stack,
+    );
+    throw error;
+  }
+}
 }
