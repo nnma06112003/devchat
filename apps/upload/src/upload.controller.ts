@@ -21,6 +21,17 @@ export class UploadController {
       case 'getAttachmentsByChannel':
         console.log('upload controller', payload.data);
         return await this.UploadService.getAttachmentsByChannel(payload.data);
+      case 'getAvatarPresignedUrl':
+        return await this.UploadService.getAvatarPresignedUrl(
+          payload.data.userId,
+          payload.data.filename,
+          payload.data.contentType,
+        );
+      case 'getAvatarUrl':
+        return await this.UploadService.getAvatarUrl(
+          payload.data.userId,
+          payload.data.key,
+        );
       default:
         return { error: 'Unknown command' };
     }

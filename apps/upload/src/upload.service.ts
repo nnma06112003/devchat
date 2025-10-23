@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
-import { Attachment } from '@myorg/entities';
+import { Attachment, User } from '@myorg/entities';
 import {
   S3Client,
   PutObjectCommand,
@@ -19,6 +19,8 @@ export class UploadService {
   constructor(
     @InjectRepository(Attachment)
     private attachmentRepo: Repository<Attachment>,
+    @InjectRepository(User)
+    private userRepo: Repository<User>,
   ) {
     this.s3 = new S3Client({
       region: 'auto', // Cloudflare R2 không cần region thật
@@ -166,5 +168,36 @@ export class UploadService {
       nextCursor,
       hasMore: attachments.length === limit,
     };
+  }
+
+  async getAvatarPresignedUrl(
+    userId: string,
+    filename: string,
+    contentType: string,
+  ) {
+    const key = `avatars/${userId}/${Date.now()}-${filename}`;
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+      ACL: 'public-read', // avatar thường public
+    });
+
+    const signedUrl = await getSignedUrl(this.s3, command, { expiresIn: 3600 });
+    return { signedUrl, key };
+  }
+
+  // Get avatar URL (tương tự getObject nhưng cho avatar)
+  async getAvatarUrl(userId: string, key: string) {
+    if (!key) return null;
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    });
+    const signedUrl = await getSignedUrl(this.s3, command, { expiresIn: 3600 });
+    if (signedUrl && userId) {
+      this.userRepo.update(userId, { avatar: signedUrl });
+    }
+    return signedUrl;
   }
 }

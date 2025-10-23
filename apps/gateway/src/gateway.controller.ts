@@ -462,6 +462,30 @@ export class GatewayController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('upload/get-avatar-presigned-url')
+  async getAvatarPresignedUrl(
+    @Body() body: { filename: string; contentType: string },
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    return this.gw.exec('upload', 'getAvatarPresignedUrl', {
+      userId: user.id,
+      filename: body.filename,
+      contentType: body.contentType,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('upload/get-avatar-url')
+  async getAvatarUrl(@Body() body: { key: string }, @Req() req: Request) {
+    const user = req.user as any;
+    return this.gw.exec('upload', 'getAvatarUrl', {
+      userId: user.id,
+      key: body.key,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('channels/:channelId/attachments')
   async getAttachmentsByChannel(
     @Param('channelId') channelId: string,
@@ -614,12 +638,12 @@ export class GatewayController {
     });
   }
 
-   @UseGuards(JwtAuthGuard)
-    @Post('notifications/count-unread')
-    async countUnreadNotifications(@Req() req: Request) {
-      const user = req.user as any;
-      return this.gw.exec('notification', 'get_number_unread_notifications', {
-        userId: user.id,
-      });
-    }
+  @UseGuards(JwtAuthGuard)
+  @Post('notifications/count-unread')
+  async countUnreadNotifications(@Req() req: Request) {
+    const user = req.user as any;
+    return this.gw.exec('notification', 'get_number_unread_notifications', {
+      userId: user.id,
+    });
+  }
 }
