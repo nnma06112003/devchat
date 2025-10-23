@@ -190,7 +190,8 @@ export class GatewayController {
     @Query('code') code: string,
     @Query('state') state?: string,
   ) {
-    const safeReq = {
+    try {
+      const safeReq = {
       session: (req as any).session,
       headers: req.headers,
       user: (req as any).user,
@@ -219,8 +220,10 @@ export class GatewayController {
         }
       }
     }
+  } catch {
+    return res.redirect(`${process.env.FE_URL}/error?error=githuboauth`);
   }
-
+  }
   // FE: POST /api/auth/login
   // Body: { email: string, password: string, otp?: string }
   @Post('auth/login')

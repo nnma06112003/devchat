@@ -62,7 +62,8 @@ async exchangeOAuthCodeForToken(code: string) {
   return { ok: true, token: data.access_token as string };
 }
 
-async githubOAuthCallback(req: any, code: string, state?: string) {
+  async githubOAuthCallback(req: any, code: string, state?: string) {
+  try{
   if (!code) {
     throw new RpcCustomException('Missing code', 400);
   }
@@ -175,6 +176,10 @@ async githubOAuthCallback(req: any, code: string, state?: string) {
   };
 
   return { nextUrl: installUrl, user, isInstall: true };
+
+  } catch {
+    throw new RpcCustomException('Không thể xác thực người dùng GitHub hoặc đã tồn tại tài khoản', 404);
+  }
 }
 
 
