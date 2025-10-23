@@ -69,6 +69,6 @@ export class User {
   @Column({ type: 'text', nullable: true })
   github_avatar?: string;
 
-
- 
+  @Column({ nullable: true })
+  avatar?: string; // URL public của avatar (CDN)
 }
