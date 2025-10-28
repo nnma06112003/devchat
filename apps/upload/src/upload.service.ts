@@ -180,24 +180,13 @@ export class UploadService {
       Bucket: this.bucket,
       Key: key,
       ContentType: contentType,
-      ACL: 'public-read', // avatar thường public
+      ACL: 'public-read',
     });
 
     const signedUrl = await getSignedUrl(this.s3, command, { expiresIn: 3600 });
-    return { signedUrl, key };
-  }
-
-  // Get avatar URL (tương tự getObject nhưng cho avatar)
-  async getAvatarUrl(userId: string, key: string) {
-    if (!key) return null;
-    const command = new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-    });
-    const signedUrl = await getSignedUrl(this.s3, command, { expiresIn: 3600 });
-    if (signedUrl && userId) {
-      this.userRepo.update(userId, { avatar: signedUrl });
+    if (key && userId) {
+      this.userRepo.update(userId, { avatar: key });
     }
-    return signedUrl;
+    return { signedUrl, key };
   }
 }

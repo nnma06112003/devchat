@@ -27,11 +27,6 @@ export class UploadController {
           payload.data.filename,
           payload.data.contentType,
         );
-      case 'getAvatarUrl':
-        return await this.UploadService.getAvatarUrl(
-          payload.data.userId,
-          payload.data.key,
-        );
       default:
         return { error: 'Unknown command' };
     }
