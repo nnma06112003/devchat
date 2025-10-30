@@ -444,6 +444,33 @@ export class GatewayController {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('messages/search')
+  async searchMessages(
+    @Query('query') query: string,
+    @Req() req: Request,
+    @Query('channelId') channelId?: string,
+    @Query('senderId') senderId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+    return this.gw.exec('chat', 'searchMessages', {
+      userId: user.id,
+      query,
+      channelId: channelId ? +channelId : undefined,
+      senderId: senderId ? +senderId : undefined,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      limit: limit ? +limit : undefined,
+      cursor: cursor ? +cursor : undefined,
+    });
+  }
+
   //Upload file
   @UseGuards(JwtAuthGuard)
   @Post('upload/get-presigned-url')
@@ -475,15 +502,7 @@ export class GatewayController {
     });
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Post('upload/get-avatar-url')
-  async getAvatarUrl(@Body() body: { key: string }, @Req() req: Request) {
-    const user = req.user as any;
-    return this.gw.exec('upload', 'getAvatarUrl', {
-      userId: user.id,
-      key: body.key,
-    });
-  }
+
 
   @UseGuards(JwtAuthGuard)
   @Get('channels/:channelId/attachments')
