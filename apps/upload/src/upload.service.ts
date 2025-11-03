@@ -33,6 +33,8 @@ export class UploadService {
     this.setupCORS();
   }
 
+  private publicURL = process.env.PUBLIC_URL || '';
+
   private async setupCORS() {
     try {
       const corsConfiguration = {

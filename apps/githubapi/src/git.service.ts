@@ -34,6 +34,16 @@ export class GitService extends BaseService<Message | Channel> {
     super(messageRepo);
   }
 
+  private genAI: any;
+
+  async initGenAI() {
+    const { GoogleGenAI } = await import('@google/genai');
+
+    this.genAI = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+    });
+  }
+
   async exchangeOAuthCodeForToken(code: string) {
     const res = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
@@ -343,10 +353,15 @@ export class GitService extends BaseService<Message | Channel> {
   }
 
   async listInstallationRepos(userId: number, page = 1, perPage = 50) {
-    return this.fetchFromGithubEndpoint(userId, 'installation/repositories', {
-      page,
-      per_page: perPage,
-    });
+    const result = await this.fetchFromGithubEndpoint(
+      userId,
+      'installation/repositories',
+      {
+        page,
+        per_page: perPage,
+      },
+    );
+    return result;
   }
 
   // === Dùng url trực tiếp từ repo JSON ===
@@ -665,7 +680,7 @@ export class GitService extends BaseService<Message | Channel> {
     const res = await fetch(url, {
       headers: {
         Authorization: `Bearer ${iatRes.token}`,
-        Accept: 'application/vnd.github.v3.diff',
+        Accept: 'application/vnd.github+json',
       },
     });
 
@@ -709,5 +724,38 @@ export class GitService extends BaseService<Message | Channel> {
     }
 
     return res.text();
+  }
+
+  //get commit analysis from gemini
+  async getCommitAnalysisFromGemini(
+    userId: number,
+    owner: string,
+    repo: string,
+    sha: string,
+    prompt: string,
+  ) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new RpcCustomException('User not found', 404);
+
+    const commitDetails = await this.getCommitDetails(userId, owner, repo, sha);
+
+    if (!commitDetails) {
+      throw new RpcCustomException('Commit details not found', 404);
+    }
+
+    if (!this.genAI) {
+      await this.initGenAI();
+    }
+
+    try {
+      const result = await this.genAI.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents:
+          prompt + `\n Nội dung commit: ${JSON.stringify(commitDetails)}`,
+      });
+      return result.text;
+    } catch (error) {
+      throw new RpcCustomException('Failed to analyze commit', 500);
+    }
   }
 }

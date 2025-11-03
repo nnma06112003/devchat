@@ -58,6 +58,15 @@ export class GitController {
           payload.data.repo,
           payload.data.sha,
         );
+
+      case 'getCommitAnalysis':
+        return await this.GitService.getCommitAnalysisFromGemini(
+          payload.data.userId,
+          payload.data.owner,
+          payload.data.repo,
+          payload.data.sha,
+          payload.data.prompt ?? '',
+        );
       default:
         return { error: 'Unknown command' };
     }

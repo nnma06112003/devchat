@@ -227,6 +227,29 @@ export class GatewayController {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('github/commit-analysis/:owner/:repo/:sha')
+  async getCommitAnalysis(
+    @Param('owner') owner: string,
+    @Param('repo') repo: string,
+    @Param('sha') sha: string,
+    @Query('prompt') prompt: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+    const result = await this.gw.exec('git', 'getCommitAnalysis', {
+      userId: user.id,
+      owner,
+      repo,
+      sha,
+      prompt: prompt ?? '',
+    });
+
+    return result;
+  }
+
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
   @Get('auth/github-oauth/redirect')
