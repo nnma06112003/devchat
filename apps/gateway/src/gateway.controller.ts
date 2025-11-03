@@ -142,6 +142,18 @@ export class GatewayController {
 
     const payload = JSON.parse(raw.toString());
 
+    console.log('Webhook payload', payload);
+
+    if (payload.commits) {
+      payload.commits.forEach((commit: any) => {
+        console.log('Commit:', commit.id);
+        console.log('Message:', commit.message);
+        console.log('Added:', commit.added);
+        console.log('Modified:', commit.modified);
+        console.log('Removed:', commit.removed);
+      });
+    }
+
     // Chuẩn hoá message để gửi đi
     const message = {
       deliveryId,
@@ -158,6 +170,84 @@ export class GatewayController {
     await this.kafka.publish('github.webhooks', message);
 
     return res.send('OK');
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('github/commit/:owner/:repo/:sha')
+  async getCommitDetails(
+    @Param('owner') owner: string,
+    @Param('repo') repo: string,
+    @Param('sha') sha: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    return this.gw.exec('git', 'getCommitDetails', {
+      userId: user.id,
+      owner,
+      repo,
+      sha,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('github/compare/:owner/:repo/:base/:head')
+  async compareCommits(
+    @Param('owner') owner: string,
+    @Param('repo') repo: string,
+    @Param('base') base: string,
+    @Param('head') head: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    return this.gw.exec('git', 'compareCommits', {
+      userId: user.id,
+      owner,
+      repo,
+      base,
+      head,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('github/commit-diff/:owner/:repo/:sha')
+  async getCommitDiff(
+    @Param('owner') owner: string,
+    @Param('repo') repo: string,
+    @Param('sha') sha: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+    return this.gw.exec('git', 'getCommitDiff', {
+      userId: user.id,
+      owner,
+      repo,
+      sha,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('github/commit-analysis/:owner/:repo/:sha')
+  async getCommitAnalysis(
+    @Param('owner') owner: string,
+    @Param('repo') repo: string,
+    @Param('sha') sha: string,
+    @Query('prompt') prompt: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+    const result = await this.gw.exec('git', 'getCommitAnalysis', {
+      userId: user.id,
+      owner,
+      repo,
+      sha,
+      prompt: prompt ?? '',
+    });
+
+    return result;
   }
 
   // ---------- AUTH ----------
@@ -192,37 +282,37 @@ export class GatewayController {
   ) {
     try {
       const safeReq = {
-      session: (req as any).session,
-      headers: req.headers,
-      user: (req as any).user,
-    };
-    const result: any = await this.gw.exec('git', 'github_oauth_callback', {
-      req: safeReq,
-      code,
-      state: state ?? undefined,
-    });
-    if (result?.data && result.data.user) {
-      const isInstall = result.data.isInstall;
-      if (isInstall) {
-        return res.redirect(result?.data?.nextUrl);
-      } else {
-        const tokenInfo: any = await this.gw.exec('auth', 'get_token_info', {
-          userId: result?.data?.user?.id,
-        });
-        if (tokenInfo && tokenInfo?.data) {
-          const access_token = tokenInfo.data.access_token;
-          const refresh_token = tokenInfo.data.refresh_token;
-          return res.redirect(
-            `${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
-          );
+        session: (req as any).session,
+        headers: req.headers,
+        user: (req as any).user,
+      };
+      const result: any = await this.gw.exec('git', 'github_oauth_callback', {
+        req: safeReq,
+        code,
+        state: state ?? undefined,
+      });
+      if (result?.data && result.data.user) {
+        const isInstall = result.data.isInstall;
+        if (isInstall) {
+          return res.redirect(result?.data?.nextUrl);
         } else {
-          return res.redirect(`${process.env.FE_URL}`);
+          const tokenInfo: any = await this.gw.exec('auth', 'get_token_info', {
+            userId: result?.data?.user?.id,
+          });
+          if (tokenInfo && tokenInfo?.data) {
+            const access_token = tokenInfo.data.access_token;
+            const refresh_token = tokenInfo.data.refresh_token;
+            return res.redirect(
+              `${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+            );
+          } else {
+            return res.redirect(`${process.env.FE_URL}`);
+          }
         }
       }
+    } catch {
+      return res.redirect(`${process.env.FE_URL}/error?error=githuboauth`);
     }
-  } catch {
-    return res.redirect(`${process.env.FE_URL}/error?error=githuboauth`);
-  }
   }
   // FE: POST /api/auth/login
   // Body: { email: string, password: string, otp?: string }
@@ -501,8 +591,6 @@ export class GatewayController {
       contentType: body.contentType,
     });
   }
-
-
 
   @UseGuards(JwtAuthGuard)
   @Get('channels/:channelId/attachments')
