@@ -57,7 +57,7 @@ export class ChatService extends BaseService<Message> {
       if (isMember) {
         return {
           msg: 'Bạn đang là thành viên của kênh này',
-          channelId: data.id,
+          channel: data,
         };
       }
       // Thêm user vào kênh
@@ -66,7 +66,7 @@ export class ChatService extends BaseService<Message> {
       await this.channelRepo.save(channel);
       return {
         msg: 'Tham gia kênh thành công',
-        channelId: channel.id,
+        channel: channel,
       };
     } else if (data.type === 'personal') {
       // Tìm user còn lại
@@ -91,11 +91,28 @@ export class ChatService extends BaseService<Message> {
           c.users.some((u) => String(u.id) === String(user.id)) &&
           c.users.some((u) => String(u.id) === String(otherUser.id)),
       );
+      
       if (found) {
-        return {
-          msg: 'Bạn đã nhắn tin với người này',
-          channelId: found.id,
-        };
+        // Kiểm tra xem giữa 2 người này có tin nhắn chưa
+        const messageCount = await this.messageRepo.count({
+          where: { channel: { id: found.id } },
+        });
+        
+        if (messageCount > 0) {
+          return {
+            msg: 'Bạn đã nhắn tin với người này',
+            channel: found,
+            hasMessages: true,
+            messageCount,
+          };
+        } else {
+          return {
+            msg: 'Bạn có kênh với người này nhưng chưa có tin nhắn nào',
+            channel: found,
+            hasMessages: false,
+            messageCount: 0,
+          };
+        }
       }
       // Tạo kênh mới
       const channel = this.channelRepo.create({
@@ -107,7 +124,7 @@ export class ChatService extends BaseService<Message> {
       const saved = await this.channelRepo.save(channel);
       return {
         msg: 'Hai bạn có thể nhắn tin với nhau',
-        channelId: saved.id,
+        channel: saved,
       };
     } else {
       throw new RpcException({ msg: 'Kênh không hợp lệ', status: 400 });
