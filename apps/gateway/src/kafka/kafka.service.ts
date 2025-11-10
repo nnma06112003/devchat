@@ -26,7 +26,7 @@ export class KafkaService implements OnModuleInit {
       eachMessage: async ({ message }) => {
         const valueStr = message.value ? message.value.toString() : '{}';
         const data = JSON.parse(valueStr);
-        //console.log('Received GitHub webhook:', data);
+        console.log('Received GitHub webhook:', data);
             
         await this.socket.broadcastWebhook(data); // gọi qua SocketService
       },

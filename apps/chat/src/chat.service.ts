@@ -224,7 +224,17 @@ export class ChatService extends BaseService<Message> {
   // Gửi tin nhắn vào channel
   async sendMessage(
     user: any,
-    data: { channelId: string; text: string; send_at: any; type?: string; like_data?: any, json_data?: any, isPin?: boolean, id?: any, isUpdate?: boolean },
+    data: {
+      channelId: string;
+      text: string;
+      send_at: any;
+      type?: string;
+      like_data?: any;
+      json_data?: any;
+      isPin?: boolean;
+      id?: any;
+      isUpdate?: boolean;
+    },
     attachments?: any[],
   ) {
     console.log(`🔍 [DEBUG] Chat service sendMessage called with:`, {
@@ -257,9 +267,18 @@ export class ChatService extends BaseService<Message> {
       if (!existing) {
         throw new RpcException({ msg: 'Tin nhắn không tồn tại', status: 404 });
       }
-      const existingSenderId = typeof existing.sender === 'object' ? existing.sender?.id : existing.sender;
-      if (String(existingSenderId) !== String(user.id) && data.type== 'remove') {
-        throw new RpcException({ msg: 'Bạn không có quyền sửa hay xóa tin nhắn này', status: 403 });
+      const existingSenderId =
+        typeof existing.sender === 'object'
+          ? existing.sender?.id
+          : existing.sender;
+      if (
+        String(existingSenderId) !== String(user.id) &&
+        data.type == 'remove'
+      ) {
+        throw new RpcException({
+          msg: 'Bạn không có quyền sửa hay xóa tin nhắn này',
+          status: 403,
+        });
       }
 
       existing.text = data.text ?? existing.text;
@@ -1096,6 +1115,112 @@ export class ChatService extends BaseService<Message> {
 
     return {
       users: items.map((u) => this.remove_field_user({ ...u })),
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  //Tìm kiếm tin nhắn
+  async searchMessages(
+    userId: string | number,
+    params: {
+      query: string; // text cần tìm
+      channelId?: string | number; // filter theo channel
+      senderId?: string | number; // filter theo người gửi
+      startDate?: Date; // filter từ ngày
+      endDate?: Date; // filter đến ngày
+      limit?: number; // số kết quả mỗi page (default 20)
+      cursor?: number; // message.id để cursor pagination
+    },
+  ) {
+    const {
+      query,
+      channelId,
+      senderId,
+      startDate,
+      endDate,
+      limit = 20,
+      cursor,
+    } = params;
+
+    if (!query || query.trim().length < 2) {
+      return { items: [], nextCursor: null, hasMore: false };
+    }
+
+    // 1. Build query với joins
+    const qb = this.messageRepo
+      .createQueryBuilder('message')
+      .leftJoinAndSelect('message.channel', 'channel')
+      .leftJoinAndSelect('message.sender', 'sender')
+      .leftJoinAndSelect('message.attachments', 'attachments')
+      .where('message.text ILIKE :query', { query: `%${query.trim()}%` })
+      .andWhere('message.type IN (:...types)', {
+        types: ['message', 'reply-message', 'file-upload'], // chỉ search message types
+      })
+      .orderBy('message.created_at', 'DESC')
+      .addOrderBy('message.id', 'DESC')
+      .take(limit + 1);
+
+    // 2. Cursor pagination
+    if (cursor) {
+      qb.andWhere('message.id < :cursor', { cursor });
+    }
+
+    // 3. Filter theo channelId (nếu có)
+    if (channelId) {
+      qb.andWhere('channel.id = :channelId', { channelId });
+    } else {
+      // Nếu không có channelId, chỉ search trong channels user có quyền xem
+      const userChannels = await this.channelRepo
+        .createQueryBuilder('channel')
+        .leftJoin('channel.users', 'user')
+        .where('user.id = :userId', { userId })
+        .select('channel.id')
+        .getMany();
+
+      const channelIds = userChannels.map((c) => c.id);
+      if (channelIds.length === 0) {
+        return { items: [], nextCursor: null, hasMore: false };
+      }
+      qb.andWhere('channel.id IN (:...channelIds)', { channelIds });
+    }
+
+    // 4. Filter theo senderId (nếu có)
+    if (senderId) {
+      qb.andWhere('sender.id = :senderId', { senderId });
+    }
+
+    // 5. Filter theo date range (nếu có)
+    if (startDate) {
+      qb.andWhere('message.created_at >= :startDate', { startDate });
+    }
+    if (endDate) {
+      qb.andWhere('message.created_at <= :endDate', { endDate });
+    }
+
+    // 6. Execute query
+    const messages = await qb.getMany();
+
+    // 7. Check hasMore và tính nextCursor
+    const hasMore = messages.length > limit;
+    const items = messages.slice(0, limit);
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+    // 8. Format response (remove sensitive fields)
+    const formatted = items.map((msg) => ({
+      ...msg,
+      sender: msg.sender
+        ? {
+            id: msg.sender.id,
+            username: msg.sender.username,
+            email: msg.sender.email,
+            avatar: msg.sender.avatar,
+          }
+        : null,
+    }));
+
+    return {
+      items: formatted,
       nextCursor,
       hasMore,
     };

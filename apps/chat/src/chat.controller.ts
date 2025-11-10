@@ -80,6 +80,11 @@ export class ChatController {
           payload.data.limit,
           payload.data.cursor,
         );
+      case 'searchMessages':
+        return await this.chatService.searchMessages(
+          payload.data.userId,
+          payload.data,
+        );
       default:
         return { error: 'Unknown command' };
     }

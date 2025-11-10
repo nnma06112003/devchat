@@ -1,4 +1,3 @@
-
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { GitService } from './git.service';
@@ -11,21 +10,63 @@ export class GitController {
   @MessagePattern('svc.git.exec')
   async handleGitMessage(@Payload() payload: any) {
     switch (payload.cmd) {
-     case 'github_oauth_callback':
-        return await this.GitService.githubOAuthCallback(payload.data.req, payload.data.code, payload.data.state);
+      case 'github_oauth_callback':
+        return await this.GitService.githubOAuthCallback(
+          payload.data.req,
+          payload.data.code,
+          payload.data.state,
+        );
       case 'github_app_setup':
-        return await this.GitService.githubAppSetup(payload.data.userId, payload.data.installationId, payload.data.userToken);
+        return await this.GitService.githubAppSetup(
+          payload.data.userId,
+          payload.data.installationId,
+          payload.data.userToken,
+        );
       case 'get_install_app_url':
         return this.GitService.getInstallAppUrl(payload.data.state);
-       case 'get_repo_installation':
+      case 'get_repo_installation':
         return this.GitService.listInstallationRepos(payload.data.userId);
       case 'get_repo_data_by_url':
-        return this.GitService.loadFromRepoLink(payload.data.userId, payload.data.url || '', payload.data);
+        return this.GitService.loadFromRepoLink(
+          payload.data.userId,
+          payload.data.url || '',
+          payload.data,
+        );
       case 'get_repo_by_ids':
         return this.GitService.getMultipleReposInfo(payload.data.items);
       case 'unlink_github_app':
         return this.GitService.unlinkGitHubApp(payload.data.userId);
+      case 'getCommitDetails':
+        return await this.GitService.getCommitDetails(
+          payload.data.userId,
+          payload.data.owner,
+          payload.data.repo,
+          payload.data.sha,
+        );
+      case 'compareCommits':
+        return await this.GitService.compareCommits(
+          payload.data.userId,
+          payload.data.owner,
+          payload.data.repo,
+          payload.data.base,
+          payload.data.head,
+        );
+      case 'getCommitDiff':
+        return await this.GitService.getCommitDiff(
+          payload.data.userId,
+          payload.data.owner,
+          payload.data.repo,
+          payload.data.sha,
+        );
 
+      case 'getCommitAnalysis':
+        return await this.GitService.getCommitAnalysisFromGemini(
+          payload.data.userId,
+          payload.data.owner,
+          payload.data.repo,
+          payload.data.sha,
+          payload.data.prompt ?? '',
+        );
       default:
         return { error: 'Unknown command' };
     }
