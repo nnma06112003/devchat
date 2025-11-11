@@ -411,8 +411,7 @@ export class ChatService extends BaseService<Message> {
             ...u,
             avatar:
               u.avatar ||
-              u.github_avatar ||
-              'https://avatar.iran.liara.run/username?username=' + u.username,
+              u.github_avatar 
           }),
         ),
         created_at: channel.created_at,
@@ -577,9 +576,7 @@ export class ChatService extends BaseService<Message> {
             ...msg.sender,
             avatar:
               msg.sender.avatar ||
-              msg.sender.github_avatar ||
-              'https://avatar.iran.liara.run/username?username=' +
-                msg.sender.username,
+              msg.sender.github_avatar,
           });
           isMine = String(msg.sender.id) === String(user.id);
         } else {
@@ -628,8 +625,7 @@ export class ChatService extends BaseService<Message> {
       email: u.email,
       avatar:
         u.avatar ||
-        u.github_avatar ||
-        'https://avatar.iran.liara.run/username?username=' + u.username,
+        u.github_avatar ,
       isMine: String(u.id) === String(user.id),
       isOwner: channel.owner && String(u.id) === String(channel.owner.id),
     }));
