@@ -6,6 +6,7 @@ import { Channel } from '@myorg/entities';
 import { BaseService, RpcCustomException } from '@myorg/common';
 import * as jwt from 'jsonwebtoken';
 import { isIn } from 'class-validator';
+import { CleanedCommitData } from './interfaces/commit-analysis.interface';
 
 type InstallationAccessToken = {
   token: string;
@@ -42,6 +43,61 @@ export class GitService extends BaseService<Message | Channel> {
     this.genAI = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
     });
+  }
+
+  // Trong apps/githubapi/src/git.service.ts
+
+  private cleanCommitData(rawCommit: any): CleanedCommitData {
+    // 1. Lọc danh sách files
+    const cleanedFiles = rawCommit.files
+      .filter((file: any) => {
+        // Bỏ qua các file lock hoặc file binary/ảnh để tiết kiệm token
+        const ignorePatterns = [
+          'package-lock.json',
+          'yarn.lock',
+          '.png',
+          '.jpg',
+          '.svg',
+        ];
+        return !ignorePatterns.some((pattern) =>
+          file.filename.endsWith(pattern),
+        );
+      })
+      .map((file: any) => ({
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        // Patch là diff code. Nếu file quá lớn hoặc binary, github có thể không trả về patch.
+        patch: file.patch || '[No patch data - Binary or Large File]',
+      }));
+
+    // 2. Trả về object gọn nhẹ
+    return {
+      message: rawCommit.commit.message,
+      author: rawCommit.commit.author.name,
+      date: rawCommit.commit.author.date,
+      stats: rawCommit.stats,
+      files: cleanedFiles,
+    };
+  }
+
+  // Hàm chuyển đổi Object thành String format để đưa vào Prompt
+  private formatCommitToPrompt(data: CleanedCommitData): string {
+    let promptContext = `Commit Message: ${data.message}\n`;
+    promptContext += `Author: ${data.author}\n`;
+    promptContext += `Stats: +${data.stats.additions} / -${data.stats.deletions}\n\n`;
+    promptContext += `--- CHANGES ---\n`;
+
+    data.files.forEach((file) => {
+      promptContext += `File: ${file.filename} (${file.status})\n`;
+      if (file.patch) {
+        promptContext += `Diff:\n${file.patch}\n`;
+      }
+      promptContext += `----------------\n`;
+    });
+
+    return promptContext;
   }
 
   async exchangeOAuthCodeForToken(code: string) {
@@ -737,25 +793,44 @@ export class GitService extends BaseService<Message | Channel> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new RpcCustomException('User not found', 404);
 
-    const commitDetails = await this.getCommitDetails(userId, owner, repo, sha);
+    const rawCommit: any = await this.getCommitDetails(
+      userId,
+      owner,
+      repo,
+      sha,
+    );
 
-    if (!commitDetails) {
-      throw new RpcCustomException('Commit details not found', 404);
+    console.log('Raw commit', rawCommit);
+
+    if (!rawCommit) {
+      throw new Error('Không tìm thấy commit');
     }
 
-    if (!this.genAI) {
-      await this.initGenAI();
-    }
+    const cleanedData = this.cleanCommitData(rawCommit);
+
+    const context = this.formatCommitToPrompt(cleanedData);
+
+    const finalPrompt = `
+    ${prompt}
+    
+    Đây là chi tiết commit:
+    ${context}
+  `;
+
+    if (!this.genAI) await this.initGenAI();
 
     try {
       const result = await this.genAI.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents:
-          prompt + `\n Nội dung commit: ${JSON.stringify(commitDetails)}`,
+        contents: [{ role: 'user', parts: [{ text: finalPrompt }] }],
       });
-      return result.text;
-    } catch (error) {
-      throw new RpcCustomException('Failed to analyze commit', 500);
+
+      return result?.text;
+    } catch (error: any) {
+      throw new RpcCustomException(
+        `Failed to analyze commit: ${error?.message || error}`,
+        500,
+      );
     }
   }
 }
