@@ -27,6 +27,8 @@ export class UploadController {
           payload.data.filename,
           payload.data.contentType,
         );
+      case 'getSheetUrl':
+        return await this.UploadService.getSheetUrl(payload.data.channelId);
       default:
         return { error: 'Unknown command' };
     }

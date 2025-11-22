@@ -593,6 +593,16 @@ export class GatewayController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('upload/get-sheet-url')
+  async getSheetUrl(@Body() body: { channelId: string }, @Req() req: Request) {
+    const user = req.user as any;
+
+    return this.gw.exec('upload', 'getSheetUrl', {
+      channelId: body.channelId,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('channels/:channelId/attachments')
   async getAttachmentsByChannel(
     @Param('channelId') channelId: string,
