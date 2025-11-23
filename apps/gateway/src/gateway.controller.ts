@@ -392,6 +392,17 @@ export class GatewayController {
     return this.gw.exec('chat', 'createChannel', payload);
   }
 
+
+
+  @UseGuards(JwtAuthGuard)
+  @Post('channels/update-channel')
+  async updateChannel(@Body() dto: any, @Req() req: Request) {
+    // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'updateChannel', payload);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('channels/unread-map')
   async getUnreadMap(@Req() req: Request) {

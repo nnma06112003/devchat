@@ -136,6 +136,8 @@ export class ChatService extends BaseService<Message> {
       userIds: (string | number)[];
       name?: string;
       type?: 'personal' | 'group' | 'group-private';
+      json_data?: any;
+      key?: string;
     },
   ) {
     if (!user || !user.id) {
@@ -184,6 +186,8 @@ export class ChatService extends BaseService<Message> {
       name:
         params.name || (type === 'personal' ? `Personal Chat` : `Group Chat`),
       type,
+      json_data: type === 'group-private' ? params.json_data : undefined,
+      key: type === 'group-private' ? params.key : undefined,
       users: members,
       member_count: members.length,
       owner: type === 'group' || type === 'group-private' ? owner : undefined,
@@ -404,6 +408,8 @@ export class ChatService extends BaseService<Message> {
       result.push({
         id: channel.id,
         name: channelName,
+        key: channel.key,
+        json_data: channel.json_data,
         type: channel.type,
         member_count: channel.member_count,
         members: (channel.users || []).map((u: any) =>
@@ -421,6 +427,244 @@ export class ChatService extends BaseService<Message> {
       });
     }
     return result;
+  }
+  
+  // Thêm sau hàm createChannel
+
+  /**
+   * Cập nhật thông tin kênh
+   * @param userId ID của user thực hiện update
+   * @param channelId ID của kênh cần update
+   * @param params Dữ liệu cần cập nhật
+   */
+  async updateChannel(
+    userId: string | number,
+    channelId: string | number,
+    params: {
+      name?: string;
+      type?: 'group' | 'group-private';
+      key?: string;
+      json_data?: any;
+      addUserIds?: (string | number)[]; // Thêm thành viên
+      removeUserIds?: (string | number)[]; // Xóa thành viên
+    },
+  ) {
+    // 1. Kiểm tra channel tồn tại
+    const channel: any = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['users', 'owner'],
+    });
+
+    if (!channel) {
+      throw new RpcException({ msg: 'Không tìm thấy kênh', status: 404 });
+    }
+
+    // 2. Kiểm tra quyền: chỉ owner mới được update (trừ personal channel)
+    if (channel.type === 'personal') {
+      throw new RpcException({
+        msg: 'Không thể cập nhật kênh personal',
+        status: 400,
+      });
+    }
+
+    const isOwner =
+      channel.owner && String(channel.owner.id) === String(userId);
+
+    // 2.1. Nếu là group-private, kiểm tra thêm role PM
+    let isPM = false;
+    if (channel.type === 'group-private' && channel.json_data) {
+      try {
+        const jsonData =
+          typeof channel.json_data === 'string'
+            ? JSON.parse(channel.json_data)
+            : channel.json_data;
+
+        if (jsonData?.userRoles && Array.isArray(jsonData.userRoles)) {
+          const userRole = jsonData.userRoles.find(
+            (ur: any) => String(ur.userId) === String(userId),
+          );
+          // Role 1 = PM
+          if (userRole && userRole.roles && Array.isArray(userRole.roles)) {
+            isPM = userRole.roles.includes(1);
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing json_data:', error);
+      }
+    }
+
+    // Kiểm tra quyền: owner HOẶC PM (nếu là group-private)
+    const hasPermission =
+      isOwner || (channel.type === 'group-private' && isPM);
+
+    if (!hasPermission) {
+      throw new RpcException({
+        msg:
+          channel.type === 'group-private'
+            ? 'Bạn không có quyền cập nhật kênh này (chỉ Owner hoặc PM)'
+            : 'Bạn không có quyền cập nhật kênh này',
+        status: 403,
+      });
+    }
+
+    // 3. Cập nhật tên kênh (nếu có)
+    if (params.name !== undefined && params.name.trim()) {
+      channel.name = params.name.trim();
+    }
+
+    // 4. Cập nhật type (chỉ cho phép chuyển đổi giữa group và group-private)
+    if (params.type !== undefined) {
+      if (params.type !== 'group' && params.type !== 'group-private') {
+        throw new RpcException({
+          msg: 'Loại kênh không hợp lệ',
+          status: 400,
+        });
+      }
+
+      // Nếu chuyển từ group-private về group, xóa key
+      if (channel.type === 'group-private' && params.type === 'group') {
+        channel.key = null;
+        channel.json_data = null;
+      }
+
+      channel.type = params.type;
+    }
+
+    // 5. Cập nhật key và json_data (chỉ cho group-private)
+    if (channel.type === 'group-private') {
+      if (params.key !== undefined) {
+        channel.key = params.key;
+      }
+      if (params.json_data !== undefined) {
+        // Validate json_data structure
+        if (params.json_data) {
+          try {
+            const jsonData =
+              typeof params.json_data === 'string'
+                ? JSON.parse(params.json_data)
+                : params.json_data;
+
+            // Kiểm tra cấu trúc userRoles
+            if (jsonData.userRoles && Array.isArray(jsonData.userRoles)) {
+              // Validate mỗi userRole
+              for (const userRole of jsonData.userRoles) {
+                if (
+                  !userRole.userId ||
+                  !Array.isArray(userRole.roles)
+                ) {
+                  throw new RpcException({
+                    msg: 'Cấu trúc json_data không hợp lệ: thiếu userId hoặc roles',
+                    status: 400,
+                  });
+                }
+              }
+            }
+
+            channel.json_data = jsonData;
+          } catch (error:any) {
+            if (error instanceof RpcException) {
+              throw error;
+            }
+            throw new RpcException({
+              msg: 'json_data không hợp lệ: ' + error.message,
+              status: 400,
+            });
+          }
+        } else {
+          channel.json_data = params.json_data;
+        }
+      }
+    } else {
+      // Nếu không phải group-private, đảm bảo key và json_data là null
+      channel.key = null;
+      channel.json_data = null;
+    }
+
+    // 6. Thêm thành viên (nếu có)
+    if (params.addUserIds && params.addUserIds.length > 0) {
+      const usersToAdd = await this.userRepo.findBy({
+        id: In(params.addUserIds),
+      });
+
+      if (usersToAdd.length !== params.addUserIds.length) {
+        throw new RpcException({
+          msg: 'Một số thành viên không tồn tại',
+          status: 400,
+        });
+      }
+
+      // Lọc những user chưa có trong channel
+      const currentMemberIds = new Set(
+        channel.users.map((u: any) => String(u.id)),
+      );
+      const newMembers = usersToAdd.filter(
+        (u: any) => !currentMemberIds.has(String(u.id)),
+      );
+
+      if (newMembers.length > 0) {
+        channel.users.push(...newMembers);
+        channel.member_count = channel.users.length;
+      }
+    }
+
+    // 7. Xóa thành viên (nếu có)
+    if (params.removeUserIds && params.removeUserIds.length > 0) {
+      // Không cho phép xóa owner
+      if (
+        params.removeUserIds.some(
+          (id) => String(id) === String(channel.owner?.id),
+        )
+      ) {
+        throw new RpcException({
+          msg: 'Không thể xóa owner khỏi kênh',
+          status: 400,
+        });
+      }
+
+      const removeIdSet = new Set(params.removeUserIds.map(String));
+      channel.users = channel.users.filter(
+        (u: any) => !removeIdSet.has(String(u.id)),
+      );
+      channel.member_count = channel.users.length;
+
+      // Kiểm tra số lượng thành viên tối thiểu
+      if (channel.users.length < 2) {
+        throw new RpcException({
+          msg: 'Kênh phải có ít nhất 2 thành viên',
+          status: 400,
+        });
+      }
+    }
+
+    // 8. Lưu thay đổi
+    await this.channelRepo.save(channel);
+
+    // 9. Lấy lại channel với đầy đủ relations
+    const updatedChannel: any = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['users', 'owner'],
+    });
+
+    // 10. Format response
+    return {
+      id: updatedChannel.id,
+      name: updatedChannel.name,
+      type: updatedChannel.type,
+      key: updatedChannel.key,
+      json_data: updatedChannel.json_data,
+      member_count: updatedChannel.member_count,
+      owner: updatedChannel.owner
+        ? this.remove_field_user({ ...updatedChannel.owner })
+        : null,
+      members: (updatedChannel.users || []).map((u: any) =>
+        this.remove_field_user({
+          ...u,
+          avatar: u.avatar || u.github_avatar,
+        }),
+      ),
+      created_at: updatedChannel.created_at,
+      updated_at: updatedChannel.updated_at,
+    };
   }
 
   /**
@@ -444,6 +688,7 @@ export class ChatService extends BaseService<Message> {
       since?: string | Date; // lọc từ thời điểm này trở đi (nếu cần)
       latest?: boolean; // chỉ lấy 1 tin mới nhất
     },
+    noAuth = false
   ) {
     const pageSize = Math.min(200, Math.max(1, options?.pageSize ?? 50));
 
@@ -462,14 +707,14 @@ export class ChatService extends BaseService<Message> {
     }
 
     // 2) Lấy channel + owner + users (để build members/sender)
-    const channel = await this.channelRepo
+    const channel:any = await this.channelRepo
       .createQueryBuilder('channel')
       .leftJoinAndSelect('channel.owner', 'owner')
       .leftJoinAndSelect('channel.users', 'member')
       .where('channel.id = :channelId', { channelId })
       .getOne();
 
-    if (!channel) {
+    if (!channel && !noAuth) {
       throw new RpcException({ msg: 'Không tìm thấy kênh chat', status: 404 });
     }
 
@@ -581,7 +826,7 @@ export class ChatService extends BaseService<Message> {
           isMine = String(msg.sender.id) === String(user.id);
         } else {
           const senderObj = (channel.users || []).find(
-            (u) => String(u.id) === String(msg.sender),
+            (u:any) => String(u.id) === String(msg.sender),
           );
           senderInfo = senderObj
             ? this.remove_field_user({ ...senderObj })
@@ -635,7 +880,7 @@ export class ChatService extends BaseService<Message> {
     return {
       channel: channelInfo,
       members,
-      items, // THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
+      items,// THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
       total: null,
       page: null,
       pageSize,

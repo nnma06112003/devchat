@@ -189,6 +189,163 @@ export class ChatSocketService {
     }
   }
 
+  async updateChannel(data: {
+    currenetUserIds: string[];
+    addUserIds: string[];
+    removeUserIds: string[];
+    channelId: string;
+    user: any;
+    q?: any;
+  }) {
+    try {
+      // 1. Lấy thông tin channel mới nhất
+      const newChannelData: any = await this.gw.exec('chat', 'listChannelsMessages', {
+        user: data.user,
+        channelId: data.channelId,
+        noAuth: true,
+        ...data.q,
+      });
+      console.log({
+        user: data.user,
+        channelId: data.channelId,
+        ...data.q,
+      });
+      
+
+      if (!newChannelData?.data) {
+        console.error('❌ No channel data returned');
+        return;
+      }
+
+      const channelInfo = newChannelData.data;
+      const channelName = channelInfo?.name || 'kênh';
+
+      // Helper: Gửi socket event đến user
+      const sendToUser = async (uid: string, event: string, payload: any) => {
+        const statusStr = await this.redis.hget('user_status', uid);
+        if (!statusStr) return false;
+
+        const status = JSON.parse(statusStr);
+        if (status.online && status.socketId) {
+          this.server.to(status.socketId).emit(event, payload);
+          console.log(`📢 Sent ${event} to user ${uid} at socket ${status.socketId}`);
+          return true;
+        }
+        return false;
+      };
+
+      // Helper: Gửi notification cho danh sách user
+      const sendNotifications = async (memberIds: string[], text: string, additionalData?: any) => {
+        if (memberIds.length === 0) return;
+
+        const tempId = Date.now() + (additionalData?.suffix || '');
+        const result = await this.gw.exec('notification', 'send_notification', {
+          memberIds,
+          text,
+          type: 'system',
+          additionalData: {
+            channelId: data.channelId,
+            channelName,
+            ...additionalData,
+          },
+        });
+
+        if (result?.data?.notifications) {
+          for (const notify of result.data.notifications) {
+            await sendToUser(notify.userId, 'receiveNotification', {
+              ...notify,
+              fakeID: tempId,
+            });
+          }
+        } 
+      };
+
+      // 2. Xử lý current members (cập nhật channel)
+      if (data.currenetUserIds.length > 0) {
+        // Gửi channel update cho current members
+        for (const uid of data.currenetUserIds) {
+          await sendToUser(uid, 'receiveUpdateChannel', channelInfo);
+        }
+
+        // Gửi notification
+        await sendNotifications(
+          data.currenetUserIds,
+          `Kênh "${channelName}" có cập nhật mới`,
+          { action: 'update' }
+        );
+      }
+
+      // 3. Xử lý add members (thêm mới)
+      if (data.addUserIds.length > 0) {
+        // Gửi channel mới cho added members
+        for (const uid of data.addUserIds) {
+          await sendToUser(uid, 'receiveChannel', channelInfo);
+        }
+
+        // Gửi notification cho added members
+        await sendNotifications(
+          data.addUserIds,
+          `Bạn đã được thêm vào kênh "${channelName}"`,
+          { action: 'add', suffix: '-add' }
+        );
+
+        // Thông báo cho current members về thành viên mới
+        const addedUsernames = channelInfo.members
+          ?.filter((m: any) => data.addUserIds.includes(String(m.id)))
+          .map((m: any) => m.username)
+          .join(', ');
+
+        if (addedUsernames && data.currenetUserIds.length > 0) {
+          await sendNotifications(
+            data.currenetUserIds.filter(uid => !data.addUserIds.includes(uid)),
+            `${addedUsernames} đã được thêm vào kênh "${channelName}"`,
+            { action: 'member-added', suffix: '-member-add' }
+          );
+        }
+      }
+
+      // 4. Xử lý remove members (xóa)
+      if (data.removeUserIds.length > 0) {
+        // Gửi event xóa channel cho removed members
+        const removePayload = {
+          channelId: data.channelId,
+          action: 'removed',
+          ...channelInfo,
+        };
+
+        for (const uid of data.removeUserIds) {
+          await sendToUser(uid, 'receiveRemoveChannel', removePayload);
+        }
+
+        // Gửi notification cho removed members
+        await sendNotifications(
+          data.removeUserIds,
+          `Bạn đã bị xóa khỏi kênh "${channelName}"`,
+          { action: 'remove', suffix: '-remove' }
+        );
+
+        // Thông báo cho current members về thành viên bị xóa
+        const removedUsernames = channelInfo.members
+          ?.filter((m: any) => data.removeUserIds.includes(String(m.id)))
+          .map((m: any) => m.username)
+          .join(', ');
+
+        if (removedUsernames && data.currenetUserIds.length > 0) {
+          await sendNotifications(
+            data.currenetUserIds,
+            `${removedUsernames} đã bị xóa khỏi kênh "${channelName}"`,
+            { action: 'member-removed', suffix: '-member-remove' }
+          );
+        }
+      }
+
+      console.log(`✅ Channel ${data.channelId} updated successfully`);
+    } catch (err) {
+      console.error(`❌ Error updating channel: ${err}`);
+      console.error(err);
+    }
+  }
+
   async sendMessageToChannel(message: {
     channelId: string;
     text: string;
@@ -318,6 +475,7 @@ export class ChatSocketService {
       // });
       
       // Kiểm tra server tồn tại trước khi emit
+      
       this.server.to(message.channelId).emit('receiveMessage', finalMessage);
       const result = await this.gw.exec('notification', 'send_notification', {
         ...res,

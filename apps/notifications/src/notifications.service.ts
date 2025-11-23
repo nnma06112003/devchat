@@ -43,6 +43,8 @@ export class NotificationService {
         return this.createMessageNotification(data);
       case 'github':
         return this.createGitHubNotification(data);
+      case 'system':
+        return this.createSystemNotification(data);
       default:
         throw new RpcCustomException(`Unsupported notification type: ${type}`);
     }
@@ -115,6 +117,68 @@ export class NotificationService {
     } catch (err: any) {
       this.logger.error(`Error in createGitHubNotification: ${err?.message || err}`);
       // Return empty result to avoid propagating an exception to the caller that would crash the microservice
+      return { notifications: [] };
+    }
+  }
+
+  /**
+   * Tạo notification hệ thống cho danh sách user
+   * @param memberIds Danh sách user ID nhận thông báo
+   * @param text Nội dung thông báo
+   * @param type Loại thông báo (mặc định: 'system')
+   * @param additionalData Dữ liệu bổ sung (optional)
+   */
+  private async createSystemNotification(data: {
+    memberIds: (string | number)[];
+    text: string;
+    type?: string;
+    additionalData?: any;
+  }): Promise<any> {
+    try {
+      const { memberIds, text, type = 'system', additionalData = {} } = data;
+
+      if (!memberIds || memberIds.length === 0) {
+        this.logger.warn('No memberIds provided for system notification');
+        return { notifications: [] };
+      }
+
+      if (!text || text.trim() === '') {
+        this.logger.warn('No text provided for system notification');
+        return { notifications: [] };
+      }
+
+      const savedNotifications: any[] = [];
+
+      for (const memberId of memberIds) {
+        const notification = new this.notificationModel({
+          userId: String(memberId),
+          type: type,
+          data: {
+            text: text,
+            timestamp: new Date(),
+            ...additionalData,
+          },
+          read: false,
+          createdAt: new Date(),
+        });
+
+        const savedNotification = await notification.save();
+        savedNotifications.push(savedNotification);
+        this.logger.log(`Created system notification for user ${memberId}`);
+      }
+
+      this.logger.log(
+        `Created ${savedNotifications.length} system notifications`,
+      );
+
+      return {
+        notifications: savedNotifications,
+        count: savedNotifications.length,
+      };
+    } catch (err: any) {
+      this.logger.error(
+        `Error in createSystemNotification: ${err?.message || err}`,
+      );
       return { notifications: [] };
     }
   }

@@ -81,6 +81,15 @@ export class ChatGateway
     await this.chatSocketService.createChannel(message);
   }
 
+  @SubscribeMessage('update_channel')
+  async handleUpdateChannel(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: AuthSocket,
+  ) {
+    const message = { user: client?.user, ...data };
+    await this.chatSocketService.updateChannel(message);
+  }
+
   @SubscribeMessage('leave_channel')
   handleLeaveChannel(
     @MessageBody() data: { channelId: string },

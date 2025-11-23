@@ -21,11 +21,20 @@ export class ChatController {
           payload.data.user,
           payload.data,
         );
+
+
+      case 'updateChannel':
+        return await this.chatService.updateChannel(
+          payload.data.user.id,
+          payload.data.channel_id,
+          payload.data,
+        );
       case 'listChannelsMessages':
         return await this.chatService.fetchHistory(
           payload.data.user,
           payload.data.channel_id,
           payload.data,
+          payload.data.noAuth,
         );
       case 'listChannels':
         return await this.chatService.listChannels(payload.data.user);

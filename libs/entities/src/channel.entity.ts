@@ -24,6 +24,9 @@ export class Channel {
   @Column()
   name: string;
 
+  @Column({ nullable: true })
+  key: string;
+
   @Column({ default: 'group' })
   type: 'personal' | 'group' | 'group-private';
 
@@ -38,6 +41,9 @@ export class Channel {
 
   @OneToMany(() => Message, (message: any) => message.channel)
   messages: Message[];
+
+   @Column({ type: 'jsonb', nullable: true })
+    json_data?: any;
 
   @ManyToMany(() => User, (user) => user.channels, { cascade: true })
   @JoinTable({
