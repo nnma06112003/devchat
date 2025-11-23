@@ -15,6 +15,7 @@ import {
 import { Message } from './message.entity';
 import { User } from './user.entity';
 import { Repository } from './repository.entity';
+import { Sheet } from './sheet.entity';
 
 @Entity('channels')
 export class Channel {
@@ -59,4 +60,7 @@ export class Channel {
 
   @ManyToMany(() => Repository, (repo) => repo.channels)
   repositories: Repository[];
+
+  @OneToOne(() => Sheet, (sheet) => sheet.channel, { nullable: true })
+  sheet?: Sheet;
 }

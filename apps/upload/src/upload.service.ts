@@ -1,8 +1,8 @@
 // apps/gateway/src/upload/upload.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
-import { Attachment, User } from '@myorg/entities';
+import { Attachment, Sheet, User } from '@myorg/entities';
 import {
   S3Client,
   PutObjectCommand,
@@ -21,6 +21,8 @@ export class UploadService {
     private attachmentRepo: Repository<Attachment>,
     @InjectRepository(User)
     private userRepo: Repository<User>,
+    @InjectRepository(Sheet)
+    private sheetRepo: Repository<Sheet>,
   ) {
     this.s3 = new S3Client({
       region: 'auto', // Cloudflare R2 không cần region thật
@@ -190,5 +192,46 @@ export class UploadService {
       this.userRepo.update(userId, { avatar: key });
     }
     return { signedUrl, key };
+  }
+
+  async getSheetUrl(channelId: number | string) {
+    try {
+      let sheet = await this.sheetRepo.findOne({
+        where: { channel: { id: channelId } },
+      });
+
+      // Generate key nếu chưa tồn tại
+      if (!sheet) {
+        const r2Key = `sheets/${channelId}/${Date.now()}-sheet.json`;
+        const sheetUrl = `${this.publicURL}/${r2Key}`;
+
+        sheet = this.sheetRepo.create({
+          channel: { id: channelId } as any,
+          sheetKey: r2Key,
+          sheetUrl,
+        });
+
+        await this.sheetRepo.save(sheet);
+      }
+
+      // Tạo signed URL để client PUT nội dung file
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: sheet.sheetKey,
+        ContentType: 'application/json',
+      });
+
+      const signedUrl = await getSignedUrl(this.s3, command, {
+        expiresIn: 3600,
+      });
+
+      return {
+        signedUrl,
+        sheetUrl: sheet.sheetUrl,
+      };
+    } catch (err) {
+      console.error('getSheetUrl error: ', err);
+      throw new InternalServerErrorException('Could not generate sheet URL');
+    }
   }
 }
