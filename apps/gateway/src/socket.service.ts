@@ -197,152 +197,130 @@ export class ChatSocketService {
     user: any;
     q?: any;
   }) {
+    console.log(`🔄 [updateChannel] Starting update for channel ${data.channelId}`, {
+      currentUsers: data.currenetUserIds.length,
+      addUsers: data.addUserIds.length,
+      removeUsers: data.removeUserIds.length,
+    });
+
     try {
       // 1. Lấy thông tin channel mới nhất
-      const newChannelData: any = await this.gw.exec('chat', 'listChannelsMessages', {
+      const channelResponse: any = await this.gw.exec('chat', 'listChannelsMessages', {
         user: data.user,
-        channelId: data.channelId,
+        channel_id: data.channelId,
+        ...data.q,
         noAuth: true,
-        ...data.q,
       });
-      console.log({
-        user: data.user,
-        channelId: data.channelId,
-        ...data.q,
-      });
-      
 
-      if (!newChannelData?.data) {
-        console.error('❌ No channel data returned');
+      if (!channelResponse?.data) {
+        console.error(`❌ [updateChannel] No channel data for ${data.channelId}`);
         return;
       }
 
-      const channelInfo = newChannelData.data;
-      const channelName = channelInfo?.name || 'kênh';
+      const channelInfo = channelResponse.data;
+      const datachannel = channelInfo?.channel || {};
+      const channelName = datachannel?.name || 'kênh';
 
-      // Helper: Gửi socket event đến user
-      const sendToUser = async (uid: string, event: string, payload: any) => {
+      console.log(`✅ [updateChannel] Channel data fetched: ${channelName}`);
+
+      // Helper: Gửi socket event
+      const emitToUser = async (uid: string, event: string, payload: any) => {
         const statusStr = await this.redis.hget('user_status', uid);
         if (!statusStr) return false;
 
         const status = JSON.parse(statusStr);
         if (status.online && status.socketId) {
           this.server.to(status.socketId).emit(event, payload);
-          console.log(`📢 Sent ${event} to user ${uid} at socket ${status.socketId}`);
           return true;
         }
         return false;
       };
 
-      // Helper: Gửi notification cho danh sách user
-      const sendNotifications = async (memberIds: string[], text: string, additionalData?: any) => {
+      // Helper: Gửi notifications
+      const sendNotifications = async (memberIds: string[], text: string, action: string) => {
         if (memberIds.length === 0) return;
 
-        const tempId = Date.now() + (additionalData?.suffix || '');
         const result = await this.gw.exec('notification', 'send_notification', {
           memberIds,
           text,
           type: 'system',
-          additionalData: {
-            channelId: data.channelId,
-            channelName,
-            ...additionalData,
-          },
+          additionalData: { channelId: data.channelId, channelName, action },
         });
 
         if (result?.data?.notifications) {
-          for (const notify of result.data.notifications) {
-            await sendToUser(notify.userId, 'receiveNotification', {
-              ...notify,
-              fakeID: tempId,
-            });
-          }
-        } 
+          const sentCount = await Promise.all(
+            result.data.notifications.map((notify: any) =>
+              emitToUser(notify.userId, 'receiveNotification', {
+                ...notify,
+                fakeID: Date.now(),
+              })
+            )
+          );
+          console.log(`📢 [updateChannel] Sent ${sentCount.filter(Boolean).length} notifications for action: ${action}`);
+        }
       };
 
-      // 2. Xử lý current members (cập nhật channel)
+      // 2. Xử lý current members (update)
       if (data.currenetUserIds.length > 0) {
-        // Gửi channel update cho current members
-        for (const uid of data.currenetUserIds) {
-          await sendToUser(uid, 'receiveUpdateChannel', channelInfo);
-        }
-
-        // Gửi notification
+        console.log(`📤 [updateChannel] Updating ${data.currenetUserIds.length} current members`);
+        
+        const sentCount = await Promise.all(
+          data.currenetUserIds.map(uid => emitToUser(uid, 'receiveUpdateChannel', channelInfo))
+        );
+        
+        console.log(`✅ [updateChannel] Sent update to ${sentCount.filter(Boolean).length} online members`);
+        
         await sendNotifications(
           data.currenetUserIds,
           `Kênh "${channelName}" có cập nhật mới`,
-          { action: 'update' }
+          'update'
         );
       }
 
-      // 3. Xử lý add members (thêm mới)
+      // 3. Xử lý add members
       if (data.addUserIds.length > 0) {
-        // Gửi channel mới cho added members
-        for (const uid of data.addUserIds) {
-          await sendToUser(uid, 'receiveChannel', channelInfo);
-        }
+        console.log(`➕ [updateChannel] Adding ${data.addUserIds.length} new members`);
 
-        // Gửi notification cho added members
-        await sendNotifications(
-          data.addUserIds,
-          `Bạn đã được thêm vào kênh "${channelName}"`,
-          { action: 'add', suffix: '-add' }
-        );
-
-        // Thông báo cho current members về thành viên mới
-        const addedUsernames = channelInfo.members
-          ?.filter((m: any) => data.addUserIds.includes(String(m.id)))
-          .map((m: any) => m.username)
-          .join(', ');
-
-        if (addedUsernames && data.currenetUserIds.length > 0) {
-          await sendNotifications(
-            data.currenetUserIds.filter(uid => !data.addUserIds.includes(uid)),
-            `${addedUsernames} đã được thêm vào kênh "${channelName}"`,
-            { action: 'member-added', suffix: '-member-add' }
-          );
-        }
-      }
-
-      // 4. Xử lý remove members (xóa)
-      if (data.removeUserIds.length > 0) {
-        // Gửi event xóa channel cho removed members
-        const removePayload = {
-          channelId: data.channelId,
-          action: 'removed',
-          ...channelInfo,
+        const newChannelPayload: any = {
+          id: datachannel.id,
+          fakeID: Date.now(),
+          name: datachannel.name,
+          type: datachannel.type,
+          member_count: datachannel.member_count,
+          members: channelInfo.members || [],
+          isActive: true,
+          created_at: datachannel.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...datachannel,
         };
 
-        for (const uid of data.removeUserIds) {
-          await sendToUser(uid, 'receiveRemoveChannel', removePayload);
-        }
-
-        // Gửi notification cho removed members
-        await sendNotifications(
-          data.removeUserIds,
-          `Bạn đã bị xóa khỏi kênh "${channelName}"`,
-          { action: 'remove', suffix: '-remove' }
+        const sentCount = await Promise.all(
+          data.addUserIds.map(uid => emitToUser(uid, 'receiveChannel', newChannelPayload))
         );
 
-        // Thông báo cho current members về thành viên bị xóa
-        const removedUsernames = channelInfo.members
-          ?.filter((m: any) => data.removeUserIds.includes(String(m.id)))
-          .map((m: any) => m.username)
-          .join(', ');
-
-        if (removedUsernames && data.currenetUserIds.length > 0) {
-          await sendNotifications(
-            data.currenetUserIds,
-            `${removedUsernames} đã bị xóa khỏi kênh "${channelName}"`,
-            { action: 'member-removed', suffix: '-member-remove' }
-          );
-        }
+        console.log(`✅ [updateChannel] Sent channel to ${sentCount.filter(Boolean).length} new members`);
       }
 
-      console.log(`✅ Channel ${data.channelId} updated successfully`);
-    } catch (err) {
-      console.error(`❌ Error updating channel: ${err}`);
-      console.error(err);
+      // 4. Xử lý remove members
+      if (data.removeUserIds.length > 0) {
+        console.log(`➖ [updateChannel] Removing ${data.removeUserIds.length} members`);
+
+        const removePayload = {
+          id: datachannel.id,
+          action: 'removed',
+          ...datachannel,
+        };
+
+        const sentCount = await Promise.all(
+          data.removeUserIds.map(uid => emitToUser(uid, 'receiveRemoveChannel', removePayload))
+        );
+
+        console.log(`✅ [updateChannel] Sent removal to ${sentCount.filter(Boolean).length} members`);
+      }
+
+      console.log(`✅ [updateChannel] Channel ${data.channelId} updated successfully`);
+    } catch (err: any) {
+      console.error(`❌ [updateChannel] Error for channel ${data.channelId}:`, err?.message || err);
     }
   }
 

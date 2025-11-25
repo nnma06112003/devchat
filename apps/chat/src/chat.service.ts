@@ -690,6 +690,47 @@ export class ChatService extends BaseService<Message> {
     },
     noAuth = false
   ) {
+    // Nếu noAuth = true, chỉ trả về thông tin kênh
+    if (noAuth) {
+      const channel: any = await this.channelRepo
+        .createQueryBuilder('channel')
+        .leftJoinAndSelect('channel.owner', 'owner')
+        .leftJoinAndSelect('channel.users', 'member')
+        .where('channel.id = :channelId', { channelId })
+        .getOne();
+
+      if (!channel) {
+        throw new RpcException({ msg: 'Không tìm thấy kênh chat', status: 404 });
+      }
+
+      // Members tối giản
+      const members = (channel.users || []).map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        avatar: u.avatar || u.github_avatar,
+        isOwner: channel.owner && String(u.id) === String(channel.owner.id),
+      }));
+
+      const { users, ...channelInfo } = channel;
+
+      return {
+        channel: channelInfo,
+        members,
+        items: [], // Không trả về items
+        total: null,
+        page: null,
+        pageSize: 0,
+        hasMoreOlder: false,
+        hasMoreNewer: false,
+        cursors: {
+          before: null,
+          after: null,
+        },
+      };
+    }
+
+    // Logic xác thực và lấy messages như cũ
     const pageSize = Math.min(200, Math.max(1, options?.pageSize ?? 50));
 
     // 1) Kiểm tra quyền truy cập kênh
@@ -707,14 +748,14 @@ export class ChatService extends BaseService<Message> {
     }
 
     // 2) Lấy channel + owner + users (để build members/sender)
-    const channel:any = await this.channelRepo
+    const channel: any = await this.channelRepo
       .createQueryBuilder('channel')
       .leftJoinAndSelect('channel.owner', 'owner')
       .leftJoinAndSelect('channel.users', 'member')
       .where('channel.id = :channelId', { channelId })
       .getOne();
 
-    if (!channel && !noAuth) {
+    if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy kênh chat', status: 404 });
     }
 
@@ -819,14 +860,12 @@ export class ChatService extends BaseService<Message> {
         if (typeof msg.sender === 'object') {
           senderInfo = this.remove_field_user({
             ...msg.sender,
-            avatar:
-              msg.sender.avatar ||
-              msg.sender.github_avatar,
+            avatar: msg.sender.avatar || msg.sender.github_avatar,
           });
           isMine = String(msg.sender.id) === String(user.id);
         } else {
           const senderObj = (channel.users || []).find(
-            (u:any) => String(u.id) === String(msg.sender),
+            (u: any) => String(u.id) === String(msg.sender),
           );
           senderInfo = senderObj
             ? this.remove_field_user({ ...senderObj })
@@ -868,9 +907,7 @@ export class ChatService extends BaseService<Message> {
       id: u.id,
       username: u.username,
       email: u.email,
-      avatar:
-        u.avatar ||
-        u.github_avatar ,
+      avatar: u.avatar || u.github_avatar,
       isMine: String(u.id) === String(user.id),
       isOwner: channel.owner && String(u.id) === String(channel.owner.id),
     }));
@@ -880,7 +917,7 @@ export class ChatService extends BaseService<Message> {
     return {
       channel: channelInfo,
       members,
-      items,// THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
+      items, // THỨ TỰ ASC (cũ → mới) — phần tử cuối là mới nhất
       total: null,
       page: null,
       pageSize,

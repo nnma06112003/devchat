@@ -87,6 +87,8 @@ export class ChatGateway
     @ConnectedSocket() client: AuthSocket,
   ) {
     const message = { user: client?.user, ...data };
+    console.log(`🔄 Update channel:`, message);
+    
     await this.chatSocketService.updateChannel(message);
   }
 
