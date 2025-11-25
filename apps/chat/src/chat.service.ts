@@ -495,7 +495,7 @@ export class ChatService extends BaseService<Message> {
 
     // Kiểm tra quyền: owner HOẶC PM (nếu là group-private)
     const hasPermission =
-      isOwner || (channel.type === 'group-private' && isPM);
+      isOwner || (channel.type === 'group-private' && isPM) || (channel.type === 'group');
 
     if (!hasPermission) {
       throw new RpcException({
