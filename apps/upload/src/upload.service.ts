@@ -78,7 +78,7 @@ export class UploadService {
 
     const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn: 60 }); // 60 giây
 
-    const fileUrl = `${process.env.CDN_URL}/${key}`; // link public qua CDN
+    const fileUrl = `${this.publicURL}/${key}`; // link public qua CDN
 
     return { uploadUrl, fileUrl, key };
   }
