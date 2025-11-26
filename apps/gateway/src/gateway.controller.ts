@@ -499,6 +499,14 @@ export class GatewayController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('channels/repository-channels')
+  async listChannelsByRepository (@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'listChannelsByRepository', payload);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('users/search-user')
   async SearchUsers(
     @Query() q: any,

@@ -384,6 +384,7 @@ export class ChatService extends BaseService<Message> {
     const channels = await this.channelRepo
       .createQueryBuilder('channel')
       .leftJoinAndSelect('channel.users', 'member')
+      .leftJoinAndSelect('channel.owner', 'owner') // Load owner
       .leftJoin('channel.users', 'user')
       .where('user.id = :userId', { userId: user?.id })
       .getMany();
@@ -404,6 +405,17 @@ export class ChatService extends BaseService<Message> {
           channelName = otherUser.username;
         }
       }
+      
+      // Chuẩn bị owner info cho group và group-private
+      let ownerInfo = null;
+      if ((channel.type === 'group' || channel.type === 'group-private') && channel.owner) {
+        ownerInfo = this.remove_field_user({
+          ...channel.owner,
+          avatar: channel.owner.avatar ?? null,
+          github_avatar: channel.owner.github_avatar ?? null,
+        });
+      }
+      
       // group và group-private luôn isActive = true
       result.push({
         id: channel.id,
@@ -412,18 +424,17 @@ export class ChatService extends BaseService<Message> {
         json_data: channel.json_data,
         type: channel.type,
         member_count: channel.member_count,
+        owner: ownerInfo, // Thêm owner info
         members: (channel.users || []).map((u: any) =>
           this.remove_field_user({
             ...u,
-            avatar:
-              u.avatar ||
-              u.github_avatar 
+            avatar: u.avatar ?? null,
+            github_avatar: u.github_avatar ?? null,
           }),
         ),
         created_at: channel.created_at,
         updated_at: channel.updated_at,
         isActive,
-        // members: (channel.users || []).map(u => this.remove_field_user({ ...u })),
       });
     }
     return result;
@@ -659,7 +670,8 @@ export class ChatService extends BaseService<Message> {
       members: (updatedChannel.users || []).map((u: any) =>
         this.remove_field_user({
           ...u,
-          avatar: u.avatar || u.github_avatar,
+          avatar: u.avatar ?? null,
+          github_avatar: u.github_avatar ?? null,
         }),
       ),
       created_at: updatedChannel.created_at,
@@ -708,7 +720,8 @@ export class ChatService extends BaseService<Message> {
         id: u.id,
         username: u.username,
         email: u.email,
-        avatar: u.avatar || u.github_avatar,
+        avatar: u.avatar ?? null,
+              github_avatar: u.github_avatar ?? null,
         isOwner: channel.owner && String(u.id) === String(channel.owner.id),
       }));
 
@@ -907,7 +920,8 @@ export class ChatService extends BaseService<Message> {
       id: u.id,
       username: u.username,
       email: u.email,
-      avatar: u.avatar || u.github_avatar,
+     avatar: u.avatar ?? null,
+      github_avatar: u.github_avatar ?? null,
       isMine: String(u.id) === String(user.id),
       isOwner: channel.owner && String(u.id) === String(channel.owner.id),
     }));
@@ -984,18 +998,34 @@ export class ChatService extends BaseService<Message> {
       }));
     };
 
-    const searchPrivateChannels = async () => {
-      const channels = await this.channelRepo
-        .createQueryBuilder('c')
-        .innerJoin('c.users', 'u', 'u.id = :uid', { uid: user.id }) // chỉ lấy kênh user là thành viên
-        .select(['c.id', 'c.name', 'c.type'])
-        .where('c.type = :type', { type: 'group-private' })
-        .andWhere('LOWER(c.name) LIKE :key', { key: `%${key}%` })
-        .take(limit)
-        .getMany();
+   const searchPrivateChannels = async () => {
+    const channels = await this.channelRepo
+      .createQueryBuilder('c')
+      .innerJoin('c.users', 'u', 'u.id = :uid', { uid: user.id }) // chỉ lấy kênh user là thành viên
+      .leftJoinAndSelect('c.users', 'members') // load tất cả members
+      .select(['c.id', 'c.name', 'c.type', 'c.key', 'c.json_data'])
+      .addSelect(['members.id', 'members.username', 'members.email', 'members.avatar', 'members.github_avatar'])
+      .where('c.type = :type', { type: 'group-private' })
+      .andWhere('LOWER(c.name) LIKE :key', { key: `%${key}%` })
+      .take(limit)
+      .getMany();
 
-      return channels.map((ch) => ({ ...ch, isMember: true }));
-    };
+    return channels.map((ch: any) => ({
+      id: ch.id,
+      name: ch.name,
+      type: ch.type,
+      key: ch.key ?? null,
+      json_data: ch.json_data ?? null,
+      isMember: true,
+      members: (ch.users || []).map((u: any) =>
+        this.remove_field_user({
+          ...u,
+         avatar: u.avatar ?? null,
+            github_avatar: u.github_avatar ?? null,
+        }),
+      ),
+    }));
+  };
 
     const searchPersonalChannels = async () => {
       const channels = await this.channelRepo
@@ -1012,7 +1042,6 @@ export class ChatService extends BaseService<Message> {
 
       return channels.map((ch) => ({
         id: ch.c_id,
-        type: ch.c_type,
         name: ch.ou_username, // đặt tên kênh = username của member còn lại
         isMember: true,
       }));
@@ -1502,5 +1531,106 @@ export class ChatService extends BaseService<Message> {
       nextCursor,
       hasMore,
     };
+  }
+
+  /**
+   * Lấy danh sách channel ID chứa repo_id
+   * @param userId ID của user yêu cầu
+   * @param repoId ID của repository
+   * @returns Danh sách channel IDs
+   */
+  async getChannelsByRepositoryId(
+    userId: string | number,
+    repoId: string | number,
+  ) {
+    // 1. Kiểm tra user tồn tại
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy user', status: 404 });
+    }
+
+    // 2. Tìm repository với relations channels
+    const repoRepo = this.attachmentRepo.manager.getRepository(RepoEntity);
+    const repo = await repoRepo.findOne({
+      where: { repo_id: String(repoId) },
+      relations: ['channels', 'channels.users', 'user'],
+    });
+
+    if (!repo) {
+      throw new RpcException({
+        msg: 'Repository không tồn tại',
+        status: 404,
+      });
+    }
+
+    // 3. Lọc các channel mà user là thành viên
+    const userChannels = (repo.channels || []).filter((channel) =>
+      channel.users.some((u) => String(u.id) === String(userId)),
+    );
+
+    // 4. Trả về danh sách channel IDs và thông tin chi tiết
+    return {
+      repo_id: repo.repo_id,
+      repo_owner_id: repo.user?.id,
+      total_channels: userChannels.length,
+      channel_ids: userChannels.map((ch) => ch.id),
+      channels: userChannels.map((ch) => ({
+        id: ch.id,
+        name: ch.name,
+        type: ch.type,
+        member_count: ch.member_count,
+      })),
+    };
+  }
+
+  /**
+   * Lấy danh sách channel ID chứa nhiều repo_id (batch)
+   * @param userId ID của user yêu cầu
+   * @param data { repoIds: string[] }
+   * @returns Mảng channel IDs
+   */
+  async getChannelsByRepositoryIds(
+    userId: string | number,
+    data: {
+      repoIds: string[];
+    },
+  ) {
+    if (!Array.isArray(data.repoIds) || data.repoIds.length === 0) {
+      throw new RpcException({
+        msg: 'Danh sách repository IDs không hợp lệ',
+        status: 400,
+      });
+    }
+
+    // 1. Kiểm tra user tồn tại
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy user', status: 404 });
+    }
+
+    // 2. Tìm tất cả repositories
+    const repoRepo = this.attachmentRepo.manager.getRepository(RepoEntity);
+    const repos = await repoRepo.find({
+      where: { repo_id: In(data.repoIds) },
+      relations: ['channels', 'channels.users'],
+    });
+
+    // 3. Lấy tất cả channel IDs mà user là thành viên
+    const channelIds = new Set<string>();
+
+    for (const repo of repos) {
+      for (const channel of repo.channels || []) {
+        // Kiểm tra user có phải là thành viên của channel không
+        const isMember = channel.users.some(
+          (u) => String(u.id) === String(userId),
+        );
+        if (isMember) {
+          channelIds.add(String(channel.id));
+        }
+      }
+    }
+
+    // 4. Trả về mảng channel IDs
+    return Array.from(channelIds);
   }
 }
