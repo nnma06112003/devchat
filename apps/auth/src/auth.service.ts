@@ -220,7 +220,7 @@ export class AuthService {
       role: user.role,
       github_verified: user.github_verified,
       github_installation_id: user.github_installation_id || null,
-      avatar: user.avatar || user.github_avatar,
+      avatar: user.avatar ?? user.github_avatar,
       created_at: user.created_at,
       updated_at: user.updated_at,
     };

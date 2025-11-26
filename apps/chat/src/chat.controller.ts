@@ -36,6 +36,12 @@ export class ChatController {
           payload.data,
           payload.data.noAuth,
         );
+
+      case 'listChannelsByRepository':
+        return await this.chatService.getChannelsByRepositoryIds(
+          payload.data.user.id,
+          payload.data
+        );
       case 'listChannels':
         return await this.chatService.listChannels(payload.data.user);
       case 'searchChatEntities':
