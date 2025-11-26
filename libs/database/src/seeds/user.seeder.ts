@@ -6,6 +6,8 @@ export class UserSeeder {
   constructor(private dataSource: DataSource) {}
 
   async run() {
+    const { fakerVI: faker } = await import('@faker-js/faker');
+
     const repo = this.dataSource.getRepository(User);
 
     // Kiểm tra nếu đã có admin thì không seed lại
@@ -25,9 +27,9 @@ export class UserSeeder {
     });
 
     // 5 user thường
-    const users = Array.from({ length: 5 }).map((_, i) =>
+    const users = Array.from({ length: 100 }).map((_, i) =>
       repo.create({
-        username: `user${i + 1}`,
+        username: faker.person.fullName(),
         email: `user${i + 1}@example.com`,
         password: defaultPassword,
         role: 'user',

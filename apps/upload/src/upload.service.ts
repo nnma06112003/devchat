@@ -187,9 +187,11 @@ export class UploadService {
       ACL: 'public-read',
     });
 
+    const avatarUrl = `${this.publicURL}/${key}`;
+
     const signedUrl = await getSignedUrl(this.s3, command, { expiresIn: 3600 });
     if (key && userId) {
-      this.userRepo.update(userId, { avatar: key });
+      this.userRepo.update(userId, { avatar: avatarUrl });
     }
     return { signedUrl, key };
   }
