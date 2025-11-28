@@ -392,8 +392,6 @@ export class GatewayController {
     return this.gw.exec('chat', 'createChannel', payload);
   }
 
-
-
   @UseGuards(JwtAuthGuard)
   @Post('channels/update-channel')
   async updateChannel(@Body() dto: any, @Req() req: Request) {
@@ -414,6 +412,14 @@ export class GatewayController {
       user.id,
     );
     return { code: 200, msg: 'Success', data };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('channels/search-keyword-messages')
+  async searchKeywordMessages(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'searchMessagesByKeyword', payload);
   }
   // ---------- CHAT ----------
   // FE: POST /api/channels/:channelId/messages
@@ -500,7 +506,7 @@ export class GatewayController {
 
   @UseGuards(JwtAuthGuard)
   @Post('channels/repository-channels')
-  async listChannelsByRepository (@Body() dto: any, @Req() req: Request) {
+  async listChannelsByRepository(@Body() dto: any, @Req() req: Request) {
     const user = req.user as any;
     const payload = { user, ...dto };
     return this.gw.exec('chat', 'listChannelsByRepository', payload);

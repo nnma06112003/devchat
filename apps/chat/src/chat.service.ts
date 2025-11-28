@@ -91,13 +91,13 @@ export class ChatService extends BaseService<Message> {
           c.users.some((u) => String(u.id) === String(user.id)) &&
           c.users.some((u) => String(u.id) === String(otherUser.id)),
       );
-      
+
       if (found) {
         // Kiểm tra xem giữa 2 người này có tin nhắn chưa
         const messageCount = await this.messageRepo.count({
           where: { channel: { id: found.id } },
         });
-        
+
         if (messageCount > 0) {
           return {
             msg: 'Bạn đã nhắn tin với người này',
@@ -405,17 +405,20 @@ export class ChatService extends BaseService<Message> {
           channelName = otherUser.username;
         }
       }
-      
+
       // Chuẩn bị owner info cho group và group-private
       let ownerInfo = null;
-      if ((channel.type === 'group' || channel.type === 'group-private') && channel.owner) {
+      if (
+        (channel.type === 'group' || channel.type === 'group-private') &&
+        channel.owner
+      ) {
         ownerInfo = this.remove_field_user({
           ...channel.owner,
           avatar: channel.owner.avatar ?? null,
           github_avatar: channel.owner.github_avatar ?? null,
         });
       }
-      
+
       // group và group-private luôn isActive = true
       result.push({
         id: channel.id,
@@ -439,7 +442,7 @@ export class ChatService extends BaseService<Message> {
     }
     return result;
   }
-  
+
   // Thêm sau hàm createChannel
 
   /**
@@ -506,7 +509,9 @@ export class ChatService extends BaseService<Message> {
 
     // Kiểm tra quyền: owner HOẶC PM (nếu là group-private)
     const hasPermission =
-      isOwner || (channel.type === 'group-private' && isPM) || (channel.type === 'group');
+      isOwner ||
+      (channel.type === 'group-private' && isPM) ||
+      channel.type === 'group';
 
     if (!hasPermission) {
       throw new RpcException({
@@ -559,10 +564,7 @@ export class ChatService extends BaseService<Message> {
             if (jsonData.userRoles && Array.isArray(jsonData.userRoles)) {
               // Validate mỗi userRole
               for (const userRole of jsonData.userRoles) {
-                if (
-                  !userRole.userId ||
-                  !Array.isArray(userRole.roles)
-                ) {
+                if (!userRole.userId || !Array.isArray(userRole.roles)) {
                   throw new RpcException({
                     msg: 'Cấu trúc json_data không hợp lệ: thiếu userId hoặc roles',
                     status: 400,
@@ -572,7 +574,7 @@ export class ChatService extends BaseService<Message> {
             }
 
             channel.json_data = jsonData;
-          } catch (error:any) {
+          } catch (error: any) {
             if (error instanceof RpcException) {
               throw error;
             }
@@ -698,9 +700,11 @@ export class ChatService extends BaseService<Message> {
       after?: string; // messageId cursor: lấy MỚI HƠN anchor (dùng cho live catch-up)
       before?: string; // messageId cursor: lấy CŨ HƠN anchor (scroll lên: trang 2,3,...)
       since?: string | Date; // lọc từ thời điểm này trở đi (nếu cần)
-      latest?: boolean; // chỉ lấy 1 tin mới nhất
+      latest?: boolean;
+      messageId?: string; // chỉ lấy các tin nhắn xung quanh message này (search mode)
+      searchRadius?: number; // số lượng tin nhắn lấy mỗi bên (mặc định 25)
     },
-    noAuth = false
+    noAuth = false,
   ) {
     // Nếu noAuth = true, chỉ trả về thông tin kênh
     if (noAuth) {
@@ -712,7 +716,10 @@ export class ChatService extends BaseService<Message> {
         .getOne();
 
       if (!channel) {
-        throw new RpcException({ msg: 'Không tìm thấy kênh chat', status: 404 });
+        throw new RpcException({
+          msg: 'Không tìm thấy kênh chat',
+          status: 404,
+        });
       }
 
       // Members tối giản
@@ -721,7 +728,7 @@ export class ChatService extends BaseService<Message> {
         username: u.username,
         email: u.email,
         avatar: u.avatar ?? null,
-              github_avatar: u.github_avatar ?? null,
+        github_avatar: u.github_avatar ?? null,
         isOwner: channel.owner && String(u.id) === String(channel.owner.id),
       }));
 
@@ -745,6 +752,10 @@ export class ChatService extends BaseService<Message> {
 
     // Logic xác thực và lấy messages như cũ
     const pageSize = Math.min(200, Math.max(1, options?.pageSize ?? 50));
+    const searchRadius = Math.min(
+      100,
+      Math.max(1, options?.searchRadius ?? 25),
+    );
 
     // 1) Kiểm tra quyền truy cập kênh
     const isMember = await this.channelRepo
@@ -770,6 +781,143 @@ export class ChatService extends BaseService<Message> {
 
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy kênh chat', status: 404 });
+    }
+
+    // 🆕 XỬ LÝ SEARCH MODE: Lấy tin nhắn xung quanh messageId
+    if (options?.messageId) {
+      const targetMessage = await this.messageRepo.findOne({
+        where: { id: options.messageId, channel: { id: channelId } },
+        select: ['id', 'send_at'],
+      });
+
+      if (!targetMessage) {
+        throw new RpcException({
+          msg: 'Không tìm thấy tin nhắn',
+          status: 404,
+        });
+      }
+
+      // Lấy tin nhắn CŨ HƠN (older)
+      const olderMessages = await this.messageRepo
+        .createQueryBuilder('message')
+        .leftJoinAndSelect('message.sender', 'sender')
+        .leftJoinAndSelect('message.attachments', 'attachment')
+        .where('message.channelId = :channelId', { channelId })
+        .andWhere(
+          `(message.send_at < :targetTime)
+         OR (message.send_at = :targetTime AND message.id < :targetId)`,
+          { targetTime: targetMessage.send_at, targetId: targetMessage.id },
+        )
+        .orderBy('message.send_at', 'DESC')
+        .addOrderBy('message.id', 'DESC')
+        .take(searchRadius)
+        .getMany();
+
+      // Lấy tin nhắn MỚI HƠN (newer)
+      const newerMessages = await this.messageRepo
+        .createQueryBuilder('message')
+        .leftJoinAndSelect('message.sender', 'sender')
+        .leftJoinAndSelect('message.attachments', 'attachment')
+        .where('message.channelId = :channelId', { channelId })
+        .andWhere(
+          `(message.send_at > :targetTime)
+         OR (message.send_at = :targetTime AND message.id > :targetId)`,
+          { targetTime: targetMessage.send_at, targetId: targetMessage.id },
+        )
+        .orderBy('message.send_at', 'ASC')
+        .addOrderBy('message.id', 'ASC')
+        .take(searchRadius)
+        .getMany();
+
+      // Lấy target message với đầy đủ relations
+      const targetMessageFull = await this.messageRepo.findOne({
+        where: { id: options.messageId },
+        relations: ['sender', 'attachments'],
+      });
+
+      // Ghép: older (đảo ngược) + target + newer
+      const rows = [
+        ...olderMessages.reverse(),
+        targetMessageFull,
+        ...newerMessages,
+      ];
+
+      // Chuẩn hóa sender & flags
+      const items = rows.map((msg: any) => {
+        let senderInfo: any = undefined;
+        let isMine = false;
+
+        if (msg.sender) {
+          if (typeof msg.sender === 'object') {
+            senderInfo = this.remove_field_user({
+              ...msg.sender,
+              avatar: msg.sender.avatar || msg.sender.github_avatar,
+            });
+            isMine = String(msg.sender.id) === String(user.id);
+          } else {
+            const senderObj = (channel.users || []).find(
+              (u: any) => String(u.id) === String(msg.sender),
+            );
+            senderInfo = senderObj
+              ? this.remove_field_user({ ...senderObj })
+              : undefined;
+            isMine = String(msg.sender) === String(user.id);
+          }
+        }
+
+        const attachments = (msg.attachments || []).map((att: any) => ({
+          id: att.id,
+          filename: att.filename,
+          fileUrl: att.fileUrl,
+          mimeType: att.mimeType,
+          fileSize: att.fileSize,
+          key: att.key,
+        }));
+
+        return {
+          ...msg,
+          channelId: msg.channelId || (msg.channel ? msg.channel.id : null),
+          sender: senderInfo,
+          attachments,
+          isMine,
+          isSearch: String(msg.id) === String(options.messageId), // 🆕 Đánh dấu tin nhắn được search
+        };
+      });
+
+      // Cursors cho search mode
+      const oldest = items[0];
+      const newest = items[items.length - 1];
+      const targetIndex = items.findIndex((m) => m.isSearch);
+
+      // Members
+      const members = (channel.users || []).map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        avatar: u.avatar ?? null,
+        github_avatar: u.github_avatar ?? null,
+        isMine: String(u.id) === String(user.id),
+        isOwner: channel.owner && String(u.id) === String(channel.owner.id),
+      }));
+
+      const { users, ...channelInfo } = channel;
+
+      return {
+        channel: channelInfo,
+        members,
+        items,
+        total: null,
+        page: null,
+        pageSize: items.length,
+        hasMoreOlder: olderMessages.length === searchRadius, // Còn tin nhắn cũ hơn
+        hasMoreNewer: newerMessages.length === searchRadius, // Còn tin nhắn mới hơn
+        searchMode: true, // 🆕 Đánh dấu là search mode
+        targetIndex, // 🆕 Vị trí của tin nhắn được search
+        cursors: {
+          before: oldest?.id ?? null,
+          after: newest?.id ?? null,
+        },
+      };
     }
 
     // Helper: lấy anchor (id + send_at)
@@ -902,6 +1050,7 @@ export class ChatService extends BaseService<Message> {
         sender: senderInfo,
         attachments,
         isMine,
+        isSearch: false, // 🆕 Không phải search mode
       };
     });
 
@@ -920,7 +1069,7 @@ export class ChatService extends BaseService<Message> {
       id: u.id,
       username: u.username,
       email: u.email,
-     avatar: u.avatar ?? null,
+      avatar: u.avatar ?? null,
       github_avatar: u.github_avatar ?? null,
       isMine: String(u.id) === String(user.id),
       isOwner: channel.owner && String(u.id) === String(channel.owner.id),
@@ -998,34 +1147,40 @@ export class ChatService extends BaseService<Message> {
       }));
     };
 
-   const searchPrivateChannels = async () => {
-    const channels = await this.channelRepo
-      .createQueryBuilder('c')
-      .innerJoin('c.users', 'u', 'u.id = :uid', { uid: user.id }) // chỉ lấy kênh user là thành viên
-      .leftJoinAndSelect('c.users', 'members') // load tất cả members
-      .select(['c.id', 'c.name', 'c.type', 'c.key', 'c.json_data'])
-      .addSelect(['members.id', 'members.username', 'members.email', 'members.avatar', 'members.github_avatar'])
-      .where('c.type = :type', { type: 'group-private' })
-      .andWhere('LOWER(c.name) LIKE :key', { key: `%${key}%` })
-      .take(limit)
-      .getMany();
+    const searchPrivateChannels = async () => {
+      const channels = await this.channelRepo
+        .createQueryBuilder('c')
+        .innerJoin('c.users', 'u', 'u.id = :uid', { uid: user.id }) // chỉ lấy kênh user là thành viên
+        .leftJoinAndSelect('c.users', 'members') // load tất cả members
+        .select(['c.id', 'c.name', 'c.type', 'c.key', 'c.json_data'])
+        .addSelect([
+          'members.id',
+          'members.username',
+          'members.email',
+          'members.avatar',
+          'members.github_avatar',
+        ])
+        .where('c.type = :type', { type: 'group-private' })
+        .andWhere('LOWER(c.name) LIKE :key', { key: `%${key}%` })
+        .take(limit)
+        .getMany();
 
-    return channels.map((ch: any) => ({
-      id: ch.id,
-      name: ch.name,
-      type: ch.type,
-      key: ch.key ?? null,
-      json_data: ch.json_data ?? null,
-      isMember: true,
-      members: (ch.users || []).map((u: any) =>
-        this.remove_field_user({
-          ...u,
-         avatar: u.avatar ?? null,
+      return channels.map((ch: any) => ({
+        id: ch.id,
+        name: ch.name,
+        type: ch.type,
+        key: ch.key ?? null,
+        json_data: ch.json_data ?? null,
+        isMember: true,
+        members: (ch.users || []).map((u: any) =>
+          this.remove_field_user({
+            ...u,
+            avatar: u.avatar ?? null,
             github_avatar: u.github_avatar ?? null,
-        }),
-      ),
-    }));
-  };
+          }),
+        ),
+      }));
+    };
 
     const searchPersonalChannels = async () => {
       const channels = await this.channelRepo
@@ -1530,6 +1685,152 @@ export class ChatService extends BaseService<Message> {
       items: formatted,
       nextCursor,
       hasMore,
+    };
+  }
+
+  async searchMessagesByKeyword(
+    userId: string | number,
+    params: {
+      key: string; // keyword để search
+      channelId?: string | number; // filter theo channel (optional)
+      limit?: number; // số kết quả mỗi page (default 20)
+      page?: number; // số trang (default 1)
+    },
+  ) {
+    const { key, channelId, limit = 20, page = 1 } = params;
+
+    // 1. Validate keyword
+    if (!key || key.trim().length < 2) {
+      return {
+        items: [],
+        total: 0,
+        page: 1,
+        limit,
+        totalPages: 0,
+        hasMore: false,
+      };
+    }
+
+    const keyword = key.trim().toLowerCase();
+    const take = Math.min(100, Math.max(1, limit));
+    const skip = (Math.max(1, page) - 1) * take;
+
+    // 2. Build base query
+    const qb = this.messageRepo
+      .createQueryBuilder('message')
+      .leftJoinAndSelect('message.channel', 'channel')
+      .leftJoinAndSelect('message.sender', 'sender')
+      .leftJoinAndSelect('message.attachments', 'attachments')
+      .where('LOWER(message.text) LIKE :keyword', { keyword: `%${keyword}%` })
+      .andWhere('message.type IN (:...types)', {
+        types: ['message', 'reply-message', 'file-upload'],
+      });
+
+    // 3. Filter theo channelId nếu có
+    if (channelId) {
+      // Kiểm tra user có quyền xem channel này không
+      const isMember = await this.channelRepo
+        .createQueryBuilder('c')
+        .innerJoin('c.users', 'u', 'u.id = :userId', { userId })
+        .where('c.id = :channelId', { channelId })
+        .getExists();
+
+      if (!isMember) {
+        throw new RpcException({
+          msg: 'Bạn không có quyền xem kênh này',
+          status: 403,
+        });
+      }
+
+      qb.andWhere('channel.id = :channelId', { channelId });
+    } else {
+      // Nếu không có channelId, chỉ search trong channels user có quyền xem
+      const userChannels = await this.channelRepo
+        .createQueryBuilder('channel')
+        .innerJoin('channel.users', 'user', 'user.id = :userId', { userId })
+        .select('channel.id')
+        .getMany();
+
+      const channelIds = userChannels.map((c) => c.id);
+      if (channelIds.length === 0) {
+        return {
+          items: [],
+          total: 0,
+          page: 1,
+          limit: take,
+          totalPages: 0,
+          hasMore: false,
+        };
+      }
+      qb.andWhere('channel.id IN (:...channelIds)', { channelIds });
+    }
+
+    // 4. Get total count
+    const total = await qb.getCount();
+    const totalPages = Math.ceil(total / take);
+    const hasMore = page < totalPages;
+
+    // 5. Get paginated results
+    const messages = await qb
+      .orderBy('message.send_at', 'DESC')
+      .addOrderBy('message.id', 'DESC')
+      .skip(skip)
+      .take(take)
+      .getMany();
+
+    // 6. Format response với highlight keyword
+    const items = messages.map((msg) => {
+      let senderInfo = null;
+      if (msg.sender) {
+        senderInfo = {
+          id: msg.sender.id,
+          username: msg.sender.username,
+          email: msg.sender.email,
+          avatar: msg.sender.avatar ?? msg.sender.github_avatar ?? null,
+        };
+      }
+
+      const attachments = (msg.attachments || []).map((att) => ({
+        id: att.id,
+        filename: att.filename,
+        fileUrl: att.fileUrl,
+        mimeType: att.mimeType,
+        fileSize: att.fileSize,
+        key: att.key,
+      }));
+
+      // Highlight keyword trong text (wrap bằng <mark> tag)
+      let highlightedText = msg.text;
+      if (msg.text && keyword) {
+        const regex = new RegExp(`(${keyword})`, 'gi');
+        highlightedText = msg.text.replace(regex, '<mark>$1</mark>');
+      }
+
+      return {
+        id: msg.id,
+        text: msg.text,
+        highlightedText, // text có highlight
+        send_at: msg.send_at,
+        created_at: msg.created_at,
+        type: msg.type,
+        json_data: msg.json_data,
+        channelId: msg.channel?.id,
+        channelName: msg.channel?.name,
+        channelType: msg.channel?.type,
+        sender: senderInfo,
+        attachments,
+        isMine: String(msg.sender?.id) === String(userId),
+      };
+    });
+
+    return {
+      items,
+      total,
+      page: Math.max(1, page),
+      limit: take,
+      totalPages,
+      hasMore,
+      keyword, // trả về keyword để frontend biết
     };
   }
 
