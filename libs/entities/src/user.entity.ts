@@ -54,15 +54,15 @@ export class User {
   github_verified: boolean;
 
   // Installation ID (dạng text cho an toàn)
-  @Column({ type: 'text', nullable: true , unique: true})
+  @Column({ type: 'text', nullable: true, unique: true })
   github_installation_id?: string;
 
   // GitHub user id (số, lưu dạng text để an toàn)
-  @Column({ type: 'text', nullable: true ,unique: true})
+  @Column({ type: 'text', nullable: true, unique: true })
   github_user_id?: string;
 
   // GitHub email
-  @Column({ type: 'varchar', length: 320, nullable: true ,unique: true })
+  @Column({ type: 'varchar', length: 320, nullable: true, unique: true })
   github_email?: string;
 
   // GitHub avatar
