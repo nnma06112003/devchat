@@ -1723,7 +1723,15 @@ export class ChatService extends BaseService<Message> {
       .leftJoinAndSelect('message.attachments', 'attachments')
       .where('LOWER(message.text) LIKE :keyword', { keyword: `%${keyword}%` })
       .andWhere('message.type IN (:...types)', {
-        types: ['message', 'reply-message', 'file-upload'],
+        types: [
+          'message',
+          'reply-message',
+          'file-upload',
+          'code-card',
+          'tool',
+          'ba-require',
+          'tester-report',
+        ],
       });
 
     // 3. Filter theo channelId nếu có
