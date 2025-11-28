@@ -218,6 +218,7 @@ export class AuthService {
       email: user.email,
       username: user.username,
       role: user.role,
+      email_verified: user.email_verified,
       github_verified: user.github_verified,
       github_installation_id: user.github_installation_id || null,
       avatar: user.avatar ?? user.github_avatar,
