@@ -788,4 +788,23 @@ export class GatewayController {
       userId: user.id,
     });
   }
+
+
+//// ADMIN MANAGERMENT
+  @UseGuards(JwtAuthGuard)
+  @Post('admin/users')
+  async adminUserManagement(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('auth', 'admin_user_management', payload);
+  }
+  
+@UseGuards(JwtAuthGuard)
+  @Post('admin/channels')
+  async adminChannelManagement(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('chat', 'admin_channel_management', payload);
+  }
+
 }

@@ -63,4 +63,7 @@ export class Channel {
 
   @OneToOne(() => Sheet, (sheet) => sheet.channel, { nullable: true })
   sheet?: Sheet;
+
+   @Column({ type: 'boolean', default: true })
+    isActive: boolean;
 }

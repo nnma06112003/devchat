@@ -50,6 +50,12 @@ export class ChatService extends BaseService<Message> {
           status: 404,
         });
       }
+      if (!channel.isActive) {
+        throw new RpcException({
+          msg: 'Kênh đã bị vô hiệu hóa',
+          status: 403,
+        });
+      }
       // Kiểm tra user đã là thành viên chưa
       const isMember = channel.users.some(
         (u) => String(u.id) === String(user.id),
@@ -200,13 +206,13 @@ export class ChatService extends BaseService<Message> {
       relations: ['users'],
     });
 
-    let isActive = true;
+    let isChannelActive = true;
     let channelName = fullChannel.name;
     if (fullChannel.type === 'personal') {
       const msgCount = await this.messageRepo.count({
         where: { channel: { id: fullChannel.id } },
       });
-      isActive = msgCount > 0;
+      isChannelActive = msgCount > 0;
       const otherUser = (fullChannel.users || []).find(
         (u: any) => String(u.id) !== String(user.id),
       );
@@ -218,7 +224,7 @@ export class ChatService extends BaseService<Message> {
     return {
       ...rest,
       name: channelName,
-      isActive,
+      isChannelActive,
       members: (fullChannel?.users || []).map((u: any) =>
         this.remove_field_user({ ...u }),
       ),
@@ -358,7 +364,7 @@ export class ChatService extends BaseService<Message> {
           ),
           created_at: channel.created_at,
           updated_at: channel.updated_at,
-          isActive: true,
+          isChannelActive: true,
         },
       };
     }
@@ -374,7 +380,7 @@ export class ChatService extends BaseService<Message> {
     return message;
   }
 
-  // Lấy danh sách channel của userId
+  // Lấy danh sách channel của userId (chỉ channel active)
   async listChannels(user: any) {
     // Trả về danh sách các channel mà user là thành viên
 
@@ -391,13 +397,13 @@ export class ChatService extends BaseService<Message> {
     // Trả về danh sách channel, mỗi channel có mảng members đã loại bỏ trường nhạy cảm
     const result = [];
     for (const channel of channels) {
-      let isActive = true;
+      let isChannelActive = true;
       let channelName = channel.name;
       if (channel.type === 'personal') {
         const msgCount = await this.messageRepo.count({
           where: { channel: { id: channel.id } },
         });
-        isActive = msgCount > 0;
+        isChannelActive = msgCount > 0;
         const otherUser = (channel.users || []).find(
           (u) => String(u.id) !== String(user.id),
         );
@@ -419,7 +425,7 @@ export class ChatService extends BaseService<Message> {
         });
       }
 
-      // group và group-private luôn isActive = true
+      // group và group-private luôn isChannelActive = true
       result.push({
         id: channel.id,
         name: channelName,
@@ -437,7 +443,7 @@ export class ChatService extends BaseService<Message> {
         ),
         created_at: channel.created_at,
         updated_at: channel.updated_at,
-        isActive,
+        isChannelActive,
       });
     }
     return result;
@@ -757,11 +763,12 @@ export class ChatService extends BaseService<Message> {
       Math.max(1, options?.searchRadius ?? 25),
     );
 
-    // 1) Kiểm tra quyền truy cập kênh
+    // 1) Kiểm tra quyền truy cập kênh và channel phải active
     const isMember = await this.channelRepo
       .createQueryBuilder('c')
       .innerJoin('c.users', 'u', 'u.id = :userId', { userId: user.id })
       .where('c.id = :channelId', { channelId })
+      .andWhere('c.isActive = :isActive', { isActive: true })
       .getExists();
 
     if (!isMember) {
@@ -1128,6 +1135,7 @@ export class ChatService extends BaseService<Message> {
         .createQueryBuilder('c')
         .select(['c.id', 'c.name', 'c.type'])
         .where('c.type = :type', { type: 'group' })
+        .andWhere('c.isActive = :isActive', { isActive: true })
         .andWhere('LOWER(c.name) LIKE :key', { key: `%${key}%` })
         .take(limit)
         .getMany();
@@ -1161,6 +1169,7 @@ export class ChatService extends BaseService<Message> {
           'members.github_avatar',
         ])
         .where('c.type = :type', { type: 'group-private' })
+        .andWhere('c.isActive = :isActive', { isActive: true })
         .andWhere('LOWER(c.name) LIKE :key', { key: `%${key}%` })
         .take(limit)
         .getMany();
@@ -1189,6 +1198,7 @@ export class ChatService extends BaseService<Message> {
         .innerJoin('c.users', 'ou') // other user
         .select(['c.id', 'c.type', 'ou.username']) // chỉ cần id, type, username
         .where('c.type = :type', { type: 'personal' })
+        .andWhere('c.isActive = :isActive', { isActive: true })
         .andWhere('u.id = :uid', { uid: user.id })
         .andWhere('ou.id != :uid', { uid: user.id })
         .andWhere('LOWER(ou.username) LIKE :key', { key: `%${key}%` })
@@ -1266,6 +1276,9 @@ export class ChatService extends BaseService<Message> {
     });
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    }
+    if (!channel.isActive) {
+      throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
     }
     const isMember = channel.users.some(
       (u) => String(u.id) === String(user.id),
@@ -1348,6 +1361,9 @@ export class ChatService extends BaseService<Message> {
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
     }
+    if (!channel.isActive) {
+      throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
+    }
     const isMember = channel.users.some((u) => String(u.id) === String(userId));
     if (!isMember) {
       throw new RpcException({
@@ -1400,6 +1416,8 @@ export class ChatService extends BaseService<Message> {
     });
     if (!channel)
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    if (!channel.isActive)
+      throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
     const isMember = channel.users.some((u) => String(u.id) === String(userId));
     if (!isMember)
       throw new RpcException({
@@ -1468,6 +1486,9 @@ export class ChatService extends BaseService<Message> {
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
     }
+    if (!channel.isActive) {
+      throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
+    }
 
     // 3. Kiểm tra user là owner của channel
     const isOwner = String(channel?.owner?.id) === String(userId);
@@ -1510,6 +1531,9 @@ export class ChatService extends BaseService<Message> {
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
     }
+    if (!channel.isActive) {
+      throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
+    }
     // 3. Kiểm tra user là owner của channel
     const isOwner = String(channel?.owner?.id) === String(userId);
     if (!isOwner) {
@@ -1544,6 +1568,10 @@ export class ChatService extends BaseService<Message> {
 
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
+    }
+
+    if (!channel.isActive) {
+      throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
     }
 
     const memberIds = channel.users.map((u) => u.id);
@@ -1630,13 +1658,29 @@ export class ChatService extends BaseService<Message> {
 
     // 3. Filter theo channelId (nếu có)
     if (channelId) {
+      // Kiểm tra channel tồn tại, user là member và channel active
+      const isMember = await this.channelRepo
+        .createQueryBuilder('c')
+        .innerJoin('c.users', 'u', 'u.id = :userId', { userId })
+        .where('c.id = :channelId', { channelId })
+        .andWhere('c.isActive = :isActive', { isActive: true })
+        .getExists();
+
+      if (!isMember) {
+        throw new RpcException({
+          msg: 'Bạn không có quyền xem kênh này hoặc kênh không khả dụng',
+          status: 403,
+        });
+      }
+      
       qb.andWhere('channel.id = :channelId', { channelId });
     } else {
-      // Nếu không có channelId, chỉ search trong channels user có quyền xem
+      // Nếu không có channelId, chỉ search trong channels user có quyền xem và active
       const userChannels = await this.channelRepo
         .createQueryBuilder('channel')
         .leftJoin('channel.users', 'user')
         .where('user.id = :userId', { userId })
+        .andWhere('channel.isActive = :isActive', { isActive: true })
         .select('channel.id')
         .getMany();
 
@@ -1736,11 +1780,12 @@ export class ChatService extends BaseService<Message> {
 
     // 3. Filter theo channelId nếu có
     if (channelId) {
-      // Kiểm tra user có quyền xem channel này không
+      // Kiểm tra user có quyền xem channel này không và channel phải active
       const isMember = await this.channelRepo
         .createQueryBuilder('c')
         .innerJoin('c.users', 'u', 'u.id = :userId', { userId })
         .where('c.id = :channelId', { channelId })
+        .andWhere('c.isActive = :isActive', { isActive: true })
         .getExists();
 
       if (!isMember) {
@@ -1752,10 +1797,11 @@ export class ChatService extends BaseService<Message> {
 
       qb.andWhere('channel.id = :channelId', { channelId });
     } else {
-      // Nếu không có channelId, chỉ search trong channels user có quyền xem
+      // Nếu không có channelId, chỉ search trong channels user có quyền xem và active
       const userChannels = await this.channelRepo
         .createQueryBuilder('channel')
         .innerJoin('channel.users', 'user', 'user.id = :userId', { userId })
+        .andWhere('channel.isActive = :isActive', { isActive: true })
         .select('channel.id')
         .getMany();
 
@@ -1817,7 +1863,7 @@ export class ChatService extends BaseService<Message> {
       return {
         id: msg.id,
         text: msg.text,
-        highlightedText, // text có highlight
+        highlightedText: highlightedText, // text có highlight
         send_at: msg.send_at,
         created_at: msg.created_at,
         type: msg.type,
@@ -1872,9 +1918,9 @@ export class ChatService extends BaseService<Message> {
       });
     }
 
-    // 3. Lọc các channel mà user là thành viên
+    // 3. Lọc các channel mà user là thành viên và channel phải active
     const userChannels = (repo.channels || []).filter((channel) =>
-      channel.users.some((u) => String(u.id) === String(userId)),
+      channel.isActive && channel.users.some((u) => String(u.id) === String(userId)),
     );
 
     // 4. Trả về danh sách channel IDs và thông tin chi tiết
@@ -1924,16 +1970,16 @@ export class ChatService extends BaseService<Message> {
       relations: ['channels', 'channels.users'],
     });
 
-    // 3. Lấy tất cả channel IDs mà user là thành viên
+    // 3. Lấy tất cả channel IDs mà user là thành viên và channel phải active
     const channelIds = new Set<string>();
 
     for (const repo of repos) {
       for (const channel of repo.channels || []) {
-        // Kiểm tra user có phải là thành viên của channel không
+        // Kiểm tra user có phải là thành viên của channel không và channel phải active
         const isMember = channel.users.some(
           (u) => String(u.id) === String(userId),
         );
-        if (isMember) {
+        if (isMember && channel.isActive) {
           channelIds.add(String(channel.id));
         }
       }
@@ -1941,5 +1987,568 @@ export class ChatService extends BaseService<Message> {
 
     // 4. Trả về mảng channel IDs
     return Array.from(channelIds);
+  }
+
+   /**
+   * CRUD cho admin quản lý channels
+   * @param userId ID của admin
+   * @param data Dữ liệu tùy theo method
+   * @param method 'create' | 'read-one' | 'read-all' | 'update' | 'delete' | 'stats'
+   */
+  async channelCRUD(userId: any, data: any, method?: string): Promise<any> {
+    // 1. Kiểm tra user tồn tại và có quyền admin
+    const user: any = await this.userRepo.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+    if (user.role !== 'admin') {
+      throw new RpcException({
+        msg: 'Không có quyền thực hiện hành động này',
+        status: 403,
+      });
+    }
+
+    switch (method) {
+      case 'create': {
+        // Tạo channel mới
+        // data.name: string (required)
+        // data.type: 'personal' | 'group' | 'group-private' (required)
+        // data.userIds: string[] (required, ít nhất 2 users)
+        // data.ownerId?: string (optional, mặc định là user đầu tiên)
+        // data.key?: string (optional, cho group-private)
+        // data.json_data?: any (optional, cho group-private)
+
+        if (!data.name || !data.type || !Array.isArray(data.userIds)) {
+          throw new RpcException({
+            msg: 'Thiếu thông tin: name, type, userIds',
+            status: 400,
+          });
+        }
+
+        if (data.userIds.length < 2) {
+          throw new RpcException({
+            msg: 'Channel phải có ít nhất 2 thành viên',
+            status: 400,
+          });
+        }
+
+        const members = await this.userRepo.findBy({
+          id: In(data.userIds),
+        });
+
+        if (members.length !== data.userIds.length) {
+          throw new RpcException({
+            msg: 'Một số user không tồn tại',
+            status: 400,
+          });
+        }
+
+        let owner = null;
+        if (data.type === 'group' || data.type === 'group-private') {
+          const ownerId = data.ownerId || data.userIds[0];
+          owner = members.find((m) => String(m.id) === String(ownerId));
+          if (!owner) {
+            throw new RpcException({
+              msg: 'Owner phải là thành viên của channel',
+              status: 400,
+            });
+          }
+        }
+
+        const newChannel = this.channelRepo.create({
+          name: data.name.trim(),
+          type: data.type,
+          users: members,
+          member_count: members.length,
+          owner: owner || undefined,
+          key: data.type === 'group-private' ? data.key : null,
+          json_data: data.type === 'group-private' ? data.json_data : null,
+        });
+
+        const saved: any = await this.channelRepo.save(newChannel);
+
+        // Lấy lại với relations
+        const fullChannel: any = await this.channelRepo.findOne({
+          where: { id: saved.id },
+          relations: ['users', 'owner'],
+        });
+
+        return {
+          id: fullChannel.id,
+          name: fullChannel.name,
+          type: fullChannel.type,
+          key: fullChannel.key,
+          json_data: fullChannel.json_data,
+          member_count: fullChannel.member_count,
+          owner: fullChannel.owner
+            ? this.remove_field_user({ ...fullChannel.owner })
+            : null,
+          members: (fullChannel.users || []).map((u: any) =>
+            this.remove_field_user({
+              ...u,
+              avatar: u.avatar ?? u.github_avatar ?? null,
+            }),
+          ),
+          isActive: fullChannel.isActive,
+          created_at: fullChannel.created_at,
+          updated_at: fullChannel.updated_at,
+        };
+      }
+
+      case 'read-one': {
+        // Đọc thông tin channel
+        // data.channelId: string (required)
+
+        if (!data.channelId) {
+          throw new RpcException({
+            msg: 'Thiếu channelId',
+            status: 400,
+          });
+        }
+
+        const channel: any = await this.channelRepo.findOne({
+          where: { id: data.channelId },
+          relations: ['users', 'owner', 'repositories'],
+        });
+
+        if (!channel) {
+          throw new RpcException({
+            msg: 'Không tìm thấy channel',
+            status: 404,
+          });
+        }
+
+        // Đếm số tin nhắn
+        const messageCount = await this.messageRepo.count({
+          where: { channel: { id: channel.id } },
+        });
+
+        return {
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          key: channel.key,
+          json_data: channel.json_data,
+          member_count: channel.member_count,
+          messageCount,
+          owner: channel.owner
+            ? this.remove_field_user({ ...channel.owner })
+            : null,
+          members: (channel.users || []).map((u: any) =>
+            this.remove_field_user({
+              ...u,
+              avatar: u.avatar ?? u.github_avatar ?? null,
+            }),
+          ),
+          repositories: (channel.repositories || []).map((r: any) => ({
+            id: r.id,
+            repo_id: r.repo_id,
+          })),
+          created_at: channel.created_at,
+          updated_at: channel.updated_at,
+        };
+      }
+
+      case 'read-all': {
+        // Lấy danh sách channels với filter và phân trang
+        // data.keySearch?: string (tìm theo tên channel)
+        // data.type?: 'personal' | 'group' | 'group-private' | 'all'
+        // data.limit?: number (default 20, max 200)
+        // data.page?: number (default 1)
+        // data.order?: 'newest' | 'oldest' (default newest)
+        // data.hasMessages?: boolean (true: có tin nhắn, false: chưa có, undefined: tất cả)
+
+        const keySearch = (data?.keySearch || '').toString().trim().toLowerCase();
+        const limit = Math.max(1, Math.min(200, Number(data?.limit ?? 20)));
+        const page = Math.max(1, Number(data?.page ?? 1));
+        const order = data?.order === 'oldest' ? 'ASC' : 'DESC';
+        const typeFilter = data?.type && data.type !== 'all' ? data.type : null;
+        const hasMessagesFilter =
+          data && Object.prototype.hasOwnProperty.call(data, 'hasMessages')
+            ? data.hasMessages
+            : undefined;
+
+        const qb = this.channelRepo
+          .createQueryBuilder('channel')
+          .leftJoinAndSelect('channel.owner', 'owner')
+          .leftJoinAndSelect('channel.users', 'member');
+
+        if (keySearch) {
+          qb.andWhere('LOWER(channel.name) LIKE :k', { k: `%${keySearch}%` });
+        }
+
+        if (typeFilter) {
+          qb.andWhere('channel.type = :type', { type: typeFilter });
+        }
+
+        qb.orderBy('channel.created_at', order as 'ASC' | 'DESC');
+        qb.skip((page - 1) * limit).take(limit);
+
+        const [channels, total] = await qb.getManyAndCount();
+
+        // Format kết quả với số lượng tin nhắn
+        const items = await Promise.all(
+          channels.map(async (ch: any) => {
+            const messageCount = await this.messageRepo.count({
+              where: { channel: { id: ch.id } },
+            });
+
+            // Filter theo hasMessages nếu có
+            if (
+              typeof hasMessagesFilter === 'boolean' &&
+              ((hasMessagesFilter && messageCount === 0) ||
+                (!hasMessagesFilter && messageCount > 0))
+            ) {
+              return null;
+            }
+
+            return {
+              id: ch.id,
+              name: ch.name,
+              type: ch.type,
+              key: ch.key ?? null,
+              json_data: ch.json_data ?? null,
+              member_count: ch.member_count,
+              messageCount,
+              owner: ch.owner ? this.remove_field_user({ ...ch.owner }) : null,
+              members: (ch.users || []).map((u: any) =>
+                this.remove_field_user({
+                  ...u,
+                  avatar: u.avatar ?? u.github_avatar ?? null,
+                }),
+              ),
+              isActive: ch.isActive,
+              created_at: ch.created_at,
+              updated_at: ch.updated_at,
+            };
+          }),
+        );
+
+        // Lọc null nếu có filter hasMessages
+        const filteredItems = items.filter((item) => item !== null);
+
+        const hasMore = page * limit < total;
+
+        return {
+          items: filteredItems,
+          total: filteredItems.length,
+          page,
+          limit,
+          hasMore,
+        };
+      }
+
+      case 'update': {
+        // Cập nhật channel (Admin có toàn quyền)
+        // data.channelId: string (required)
+        // data.name?: string
+        // data.type?: 'group' | 'group-private'
+        // data.key?: string
+        // data.json_data?: any
+        // data.ownerId?: string (chuyển owner)
+        // data.addUserIds?: string[] (thêm members)
+        // data.removeUserIds?: string[] (xóa members)
+
+        if (!data.channelId) {
+          throw new RpcException({
+            msg: 'Thiếu channelId',
+            status: 400,
+          });
+        }
+
+        const channel: any = await this.channelRepo.findOne({
+          where: { id: data.channelId },
+          relations: ['users', 'owner'],
+        });
+
+        if (!channel) {
+          throw new RpcException({
+            msg: 'Không tìm thấy channel',
+            status: 404,
+          });
+        }
+
+        // Admin có thể update cả personal channel
+        // Cập nhật tên
+        if (data.name !== undefined && data.name.trim()) {
+          channel.name = data.name.trim();
+        }
+
+        // Cập nhật type (không cho chuyển từ personal)
+        if (data.type !== undefined) {
+          if (channel.type === 'personal') {
+            throw new RpcException({
+              msg: 'Không thể thay đổi loại kênh personal',
+              status: 400,
+            });
+          }
+
+          if (data.type !== 'group' && data.type !== 'group-private') {
+            throw new RpcException({
+              msg: 'Loại kênh không hợp lệ',
+              status: 400,
+            });
+          }
+          channel.type = data.type;
+
+          if (data.type === 'group') {
+            channel.key = null;
+            channel.json_data = null;
+          }
+        }
+
+        // Cập nhật key và json_data
+        if (channel.type === 'group-private') {
+          if (data.key !== undefined) channel.key = data.key;
+          if (data.json_data !== undefined) channel.json_data = data.json_data;
+        }
+
+        // Chuyển owner (admin có thể chuyển owner cho bất kỳ ai)
+        if (data.ownerId !== undefined) {
+          const newOwner = await this.userRepo.findOne({
+            where: { id: data.ownerId },
+          });
+          if (!newOwner) {
+            throw new RpcException({
+              msg: 'Owner mới không tồn tại',
+              status: 404,
+            });
+          }
+          // Kiểm tra owner mới có là thành viên không
+          const isOwnerMember = channel.users.some(
+            (u: any) => String(u.id) === String(newOwner.id),
+          );
+          if (!isOwnerMember) {
+            throw new RpcException({
+              msg: 'Owner mới phải là thành viên của kênh',
+              status: 400,
+            });
+          }
+          channel.owner = newOwner;
+        }
+
+        // Thêm thành viên
+        if (data.addUserIds && Array.isArray(data.addUserIds)) {
+          const usersToAdd = await this.userRepo.findBy({
+            id: In(data.addUserIds),
+          });
+          const currentMemberIds = new Set(
+            channel.users.map((u: any) => String(u.id)),
+          );
+          const newMembers = usersToAdd.filter(
+            (u: any) => !currentMemberIds.has(String(u.id)),
+          );
+          if (newMembers.length > 0) {
+            channel.users.push(...newMembers);
+            channel.member_count = channel.users.length;
+          }
+        }
+
+        // Xóa thành viên (admin có thể xóa cả owner)
+        if (data.removeUserIds && Array.isArray(data.removeUserIds)) {
+          const removeIdSet = new Set(data.removeUserIds.map(String));
+          channel.users = channel.users.filter(
+            (u: any) => !removeIdSet.has(String(u.id)),
+          );
+          channel.member_count = channel.users.length;
+
+          // FIX: Kiểm tra channel.owner trước khi truy cập thuộc tính
+          if (channel.owner) {
+            const ownerRemoved = data.removeUserIds.some(
+              (id: any) => String(id) === String(channel.owner.id)
+            );
+            
+            if (ownerRemoved) {
+              // Gán owner mới là user đầu tiên còn lại
+              if (channel.users.length > 0) {
+                channel.owner = channel.users[0];
+              } else {
+                channel.owner = null;
+              }
+            }
+          }
+
+          if (channel.users.length < 2 && channel.type !== 'personal') {
+            throw new RpcException({
+              msg: 'Kênh phải có ít nhất 2 thành viên',
+              status: 400,
+            });
+          }
+        }
+
+        await this.channelRepo.save(channel);
+
+        // Lấy lại với relations
+        const updated: any = await this.channelRepo.findOne({
+          where: { id: data.channelId },
+          relations: ['users', 'owner'],
+        });
+
+        return {
+          id: updated.id,
+          name: updated.name,
+          type: updated.type,
+          key: updated.key,
+          json_data: updated.json_data,
+          member_count: updated.member_count,
+          owner: updated.owner
+            ? this.remove_field_user({ ...updated.owner })
+            : null,
+          members: (updated.users || []).map((u: any) =>
+            this.remove_field_user({
+              ...u,
+              avatar: u.avatar ?? u.github_avatar ?? null,
+            }),
+          ),
+          created_at: updated.created_at,
+          updated_at: updated.updated_at,
+        };
+      }
+
+      case 'delete': {
+        // Xóa channel (Admin có toàn quyền xóa bất kỳ channel nào)
+        // data.channelId: string (required)
+        // data.hard?: boolean (true: xóa vĩnh viễn kể cả messages, false: chỉ xóa channel)
+
+        if (!data.channelId) {
+          throw new RpcException({
+            msg: 'Thiếu channelId',
+            status: 400,
+          });
+        }
+
+        const channel = await this.channelRepo.findOne({
+          where: { id: data.channelId },
+          relations: ['users', 'messages', 'repositories'],
+        });
+
+        if (!channel) {
+          throw new RpcException({
+            msg: 'Không tìm thấy channel',
+            status: 404,
+          });
+        }
+
+        const channelInfo = {
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          member_count: channel.member_count,
+        };
+
+        // Hard delete: xóa cả messages và channel
+        if (data.hard === true) {
+          // Đếm số messages trước khi xóa
+          const messageCount = await this.messageRepo.count({
+            where: { channel: { id: channel.id } },
+          });
+
+          // Xóa tất cả messages
+          await this.messageRepo.delete({ channel: { id: channel.id } });
+
+          // Xóa channel
+          await this.channelRepo.remove(channel);
+
+          return {
+            msg: 'Đã xóa vĩnh viễn channel và tất cả tin nhắn',
+            channelId: data.channelId,
+            channelInfo,
+            deletedMessages: messageCount,
+          };
+        } else {
+          // Soft delete: chỉ xóa channel (giữ messages cho audit)
+          await this.channelRepo.remove(channel);
+
+          return {
+            msg: 'Đã xóa channel (giữ lại tin nhắn)',
+            channelId: data.channelId,
+            channelInfo,
+          };
+        }
+      }
+
+      case 'toggle-active': {
+        // Bật/tắt trạng thái isActive của channel
+        // data.channelId: string (required)
+
+        if (!data.id) {
+          throw new RpcException({
+            msg: 'Thiếu channelId',
+            status: 400,
+          });
+        }
+
+        const channel: any = await this.channelRepo.findOne({
+          where: { id: data.id },
+          relations: ['users', 'owner'],
+        });
+
+        if (!channel) {
+          throw new RpcException({
+            msg: 'Không tìm thấy channel',
+            status: 404,
+          });
+        }
+
+        // Đảo trạng thái isActive
+        channel.isActive = !channel.isActive;
+        await this.channelRepo.save(channel);
+
+        return {
+          msg: `Đã ${channel.isActive ? 'kích hoạt' : 'vô hiệu hóa'} kênh`,
+          channelId: channel.id,
+          isActive: channel.isActive,
+          name: channel.name,
+          type: channel.type,
+        };
+      }
+
+      case 'stats': {
+        // Thống kê tổng quan về channels
+        const totalChannels = await this.channelRepo.count();
+        const personalChannels = await this.channelRepo.count({
+          where: { type: 'personal' },
+        });
+        const groupChannels = await this.channelRepo.count({
+          where: { type: 'group' },
+        });
+        const privateChannels = await this.channelRepo.count({
+          where: { type: 'group-private' },
+        });
+        const totalMessages = await this.messageRepo.count();
+
+        // Lấy top 5 channels có nhiều tin nhắn nhất
+        const topChannels = await this.channelRepo
+          .createQueryBuilder('channel')
+          .leftJoinAndSelect('channel.owner', 'owner')
+          .loadRelationCountAndMap('channel.messageCount', 'channel.messages')
+          .orderBy('channel.messageCount', 'DESC')
+          .take(5)
+          .getMany();
+
+        return {
+          totalChannels,
+          personalChannels,
+          groupChannels,
+          privateChannels,
+          totalMessages,
+          topChannels: topChannels.map((ch: any) => ({
+            id: ch.id,
+            name: ch.name,
+            type: ch.type,
+            member_count: ch.member_count,
+            messageCount: ch.messageCount || 0,
+            owner: ch.owner ? this.remove_field_user({ ...ch.owner }) : null,
+          })),
+        };
+      }
+
+      default:
+        throw new RpcException({
+          msg: 'Method không hợp lệ',
+          status: 400,
+        });
+    }
   }
 }

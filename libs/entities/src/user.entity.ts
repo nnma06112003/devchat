@@ -71,4 +71,8 @@ export class User {
 
   @Column({ nullable: true })
   avatar?: string; // URL public của avatar (CDN)
+
+  @Column({ type: 'boolean', default: true })
+  isActive: boolean;
+
 }

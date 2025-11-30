@@ -17,7 +17,7 @@ export class ChannelSeeder {
     const channels: Channel[] = [];
 
     // --- Group channels ---
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 5; i++) {
       // random 3–6 user
       const memberCount = Math.floor(Math.random() * 4) + 3;
       const shuffled = users.sort(() => 0.5 - Math.random());
@@ -35,7 +35,7 @@ export class ChannelSeeder {
     }
 
     // --- Personal channels (1-1) ---
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 5; i++) {
       const shuffled = users.sort(() => 0.5 - Math.random());
       const members = shuffled.slice(0, 2);
 

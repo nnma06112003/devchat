@@ -135,8 +135,14 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto): Promise<any> {
+    try {
     const user: any = await this.userRepository.findByEmail(loginDto.email);
-
+    if (!user) {
+      throw new RpcException({
+        msg: 'Bạn chưa đăng ký tài khoản . Vui lòng đăng ký trước khi đăng nhập',
+        status: 401,
+      });
+    }
     if (!user.email_verified) {
       throw new RpcException({
         msg: 'Vui lòng xác thực email trước khi đăng nhập',
@@ -144,12 +150,12 @@ export class AuthService {
       });
     }
 
-    if (!user) {
+    if (!user.isActive) {
       throw new RpcException({
-        msg: 'Tài khoản hoặc mật khẩu không đúng',
-        status: 401,
+        msg: 'Tài khoản đã bị vô hiệu hóa',
+        status: 403,
       });
-    }
+    } 
 
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
@@ -176,7 +182,13 @@ export class AuthService {
     return {
       access_token,
       refresh_token,
-    };
+      };
+    } catch (error) {
+       throw new RpcException({
+        msg: 'Tài khoản không đúng',
+        status: 401,
+      });
+    }
   }
 
   async validateToken(token: string): Promise<any> {
@@ -186,8 +198,15 @@ export class AuthService {
 
       if (!user) {
         throw new RpcException({
-          msg: 'Không tìm thấy người dùng',
-          status: 401,
+          msg: 'Người dùng không tồn tại',
+          status: 404,
+        });
+      }
+
+      if (!user.isActive) {
+        throw new RpcException({
+          msg: 'Tài khoản đã bị vô hiệu hóa',
+          status: 403,
         });
       }
       const userData = {
@@ -211,6 +230,10 @@ export class AuthService {
     const user: any = await this.userRepository.findById(userId);
     if (!user) {
       throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
+    }
+
+    if (!user.isActive) {
+      throw new RpcException({ msg: 'Tài khoản đã bị vô hiệu hóa', status: 403 });
     }
 
     return {
@@ -259,6 +282,13 @@ export class AuthService {
       });
     }
 
+    if (!user.isActive) {
+      throw new RpcException({
+        msg: 'Tài khoản đã bị vô hiệu hóa',
+        status: 403,
+      });
+    }
+
     // 2. Tạo access_token mới
     const payloadData: JwtPayload = {
       sub: user.id,
@@ -295,6 +325,10 @@ export class AuthService {
       throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
     }
 
+    if (!user.isActive) {
+      throw new RpcException({ msg: 'Tài khoản đã bị vô hiệu hóa', status: 403 });
+    }
+
     // Chỉ cập nhật các trường hợp lệ
     if (data.username !== undefined) user.username = data.username;
     if (data.email !== undefined) user.email = data.email;
@@ -317,6 +351,14 @@ export class AuthService {
 
   async getTokenUserData(userId: any): Promise<any> {
     const user: any = await this.userRepository.findById(userId);
+
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+
+    if (!user.isActive) {
+      throw new RpcException({ msg: 'Tài khoản đã bị vô hiệu hóa', status: 403 });
+    }
 
     // if (user.refresh_token) {
     //   return null;
@@ -389,6 +431,10 @@ export class AuthService {
       throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
     }
 
+    if (!user.isActive) {
+      throw new RpcException({ msg: 'Tài khoản đã bị vô hiệu hóa', status: 403 });
+    }
+
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
       throw new RpcException({
@@ -402,4 +448,167 @@ export class AuthService {
     await this.userRepository.save(user);
     return { status: 200, msg: 'Cập nhật mật khẩu thành công' };
   }
+
+
+  async CRUD(userId: any, data: any, method?: string, ): Promise<any> {
+    const user: any = await this.userRepository.findById(userId);
+
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+    if (user.role !== 'admin') { 
+      throw new RpcException({ msg: 'Không có quyền thực hiện hành động này', status: 403 });
+    }
+
+
+    switch(method) { 
+      case 'deactivate':
+        const userdeactivate: any = await this.userRepository.findById(data.userId);
+        userdeactivate.isActive = false;
+        await this.userRepository.save(userdeactivate);
+        break;
+      case 'activate':  
+        const userToActivate: any = await this.userRepository.findById(data.userId);
+        userToActivate.isActive = true;
+        await this.userRepository.save(userToActivate);
+        break;
+      
+      case 'create':
+        // Tạo user mới
+        const existingUser = await this.userRepository.findByEmail(
+          data.email,
+        );
+        if (existingUser) {
+          throw new RpcException({ msg: 'Email đã tồn tại', status: 409 });
+        }
+        const hashedPassword = await bcrypt.hash(data.password, 10);
+
+        const newUser: any = await this.userRepository.create({
+          ...data,
+          password: hashedPassword,
+        });
+        await this.userRepository.save(newUser);
+        break;
+      case 'read-one':
+      // Đọc thông tin user
+        return await this.userRepository.findById(data.userId);
+      case 'read-all': {
+        // Hỗ trợ params:
+        // data.keySearch?: string
+        // data.limit?: number
+        // data.page?: number
+        // data.order?: 'newest' | 'oldest'    (mới nhất = newest -> created_at DESC)
+        // data.isActive?: boolean | null     (true/false/null = all)
+        const keySearch = (data?.keySearch || '').toString().trim().toLowerCase();
+        const limit = Math.max(1, Math.min(200, Number(data?.limit ?? 20)));
+        const page = Math.max(1, Number(data?.page ?? 1));
+        const order = data?.order === 'oldest' ? 'ASC' : 'DESC';
+        const isActiveFilter =
+          data && Object.prototype.hasOwnProperty.call(data, 'isActive')
+            ? data.isActive
+            : undefined; // undefined => không filter
+
+        const qb = this.userRepo.createQueryBuilder('user');
+
+        // Chọn rõ ràng các trường không nhạy cảm (loại bỏ password, refresh_token, verification_token,...)
+        qb.select([
+          'user.id',
+          'user.username',
+          'user.email',
+          'user.role',
+          'user.avatar',
+          'user.github_avatar',
+          'user.email_verified',
+          'user.github_verified',
+          'user.github_installation_id',
+          'user.created_at',
+          'user.updated_at',
+          'user.isActive',
+        ]);
+
+        if (keySearch) {
+          qb.andWhere(
+            '(LOWER(user.username) LIKE :k OR LOWER(user.email) LIKE :k)',
+            { k: `%${keySearch}%` },
+          );
+        }
+
+        if (typeof isActiveFilter === 'boolean') {
+          qb.andWhere('user.isActive = :isActive', { isActive: isActiveFilter });
+        }
+
+        qb.orderBy('user.created_at', order as 'ASC' | 'DESC');
+        qb.addOrderBy('user.id', order as 'ASC' | 'DESC'); // Thêm order by id để đảm bảo thứ tự nhất quán
+        qb.skip((page - 1) * limit).take(limit);
+
+        const [items, total] = await qb.getManyAndCount();
+
+        const formatted = items.map((u: any) => ({
+          id: u.id,
+          username: u.username ?? null,
+          email: u.email,
+          role: u.role,
+          avatar: u.avatar ?? u.github_avatar ?? null,
+          github_avatar: u.github_avatar ?? null,
+          email_verified: !!u.email_verified,
+          github_verified: !!u.github_verified,
+          github_installation_id: u.github_installation_id ?? null,
+          isActive: u.isActive,
+          created_at: u.created_at,
+          updated_at: u.updated_at,
+        }));
+
+        const hasMore = page * limit < total;
+
+        return {
+          items: formatted,
+          total,
+          page,
+          limit,
+          hasMore,
+        };
+      }
+      case 'update':
+        // Cập nhật thông tin user
+        const userToUpdate: any = await this.userRepository.findById(data.userId);
+        if (!userToUpdate) {
+          throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+        }
+        // Chỉ cập nhật các trường hợp lệ
+        if (data.username !== undefined) userToUpdate.username = data.username;
+        if (data.email !== undefined) userToUpdate.email = data.email;
+        if (data.github_verified !== undefined)
+          userToUpdate.github_verified = data.github_verified;
+        await this.userRepository.save(userToUpdate);
+        break;
+      case 'toggle-active': {
+        // data.userId required
+        const targetUser: any = await this.userRepository.findById(data.id);
+        if (!targetUser) {
+          throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+        }
+
+        // Chỉ cho phép toggle với role 'user'
+        if (String(targetUser.role) !== 'user') {
+          throw new RpcException({
+            msg: 'Chỉ có thể bật/tắt tài khoản có role "user"',
+            status: 403,
+          });
+        }
+
+        // Đảo trạng thái isActive
+        targetUser.isActive = !targetUser.isActive;
+        await this.userRepository.save(targetUser);
+
+        return {
+          msg: `Đã ${targetUser.isActive ? 'kích hoạt' : 'vô hiệu hóa'} tài khoản`,
+          userId: targetUser.id,
+          isActive: targetUser.isActive,
+        };
+      }
+      default:
+        break;
+    }
+  }
+
 }

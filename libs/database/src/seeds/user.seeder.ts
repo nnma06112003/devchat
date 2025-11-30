@@ -27,7 +27,7 @@ export class UserSeeder {
     });
 
     // 5 user thường
-    const users = Array.from({ length: 100 }).map((_, i) =>
+    const users = Array.from({ length: 10 }).map((_, i) =>
       repo.create({
         username: faker.person.fullName(),
         email: `user${i + 1}@example.com`,

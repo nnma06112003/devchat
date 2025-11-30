@@ -40,6 +40,8 @@ export class AuthController {
           data.oldPassword,
           data.newPassword,
         );
+      case 'admin_user_management':
+        return this.authService.CRUD(data.user.id, data, data.method);
       default:
         return { ok: false, error: `Unknown cmd: ${cmd}` };
     }

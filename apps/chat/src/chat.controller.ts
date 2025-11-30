@@ -105,6 +105,12 @@ export class ChatController {
           payload.data.userId,
           payload.data,
         );
+      case 'admin_channel_management':
+        return await this.chatService.channelCRUD(
+          payload.data.user.id,
+          payload.data,
+          payload.data.method,
+        );
       default:
         return { error: 'Unknown command' };
     }
