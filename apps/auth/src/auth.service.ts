@@ -489,9 +489,28 @@ export class AuthService {
         });
         await this.userRepository.save(newUser);
         break;
-      case 'read-one':
-      // Đọc thông tin user
-        return await this.userRepository.findById(data.userId);
+      case 'read-one': {
+        // Đọc thông tin user
+        const userToRead: any = await this.userRepository.findById(data.id);
+        if (!userToRead) {
+          throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+        }
+        
+        return {
+          id: userToRead.id,
+          username: userToRead.username ?? null,
+          email: userToRead.email,
+          role: userToRead.role,
+          avatar: userToRead.avatar ?? userToRead.github_avatar ?? null,
+          github_avatar: userToRead.github_avatar ?? null,
+          email_verified: !!userToRead.email_verified,
+          github_verified: !!userToRead.github_verified,
+          github_installation_id: userToRead.github_installation_id ?? null,
+          isActive: userToRead.isActive,
+          created_at: userToRead.created_at,
+          updated_at: userToRead.updated_at,
+        };
+      }
       case 'read-all': {
         // Hỗ trợ params:
         // data.keySearch?: string

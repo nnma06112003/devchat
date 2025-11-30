@@ -393,6 +393,7 @@ export class ChatService extends BaseService<Message> {
       .leftJoinAndSelect('channel.owner', 'owner') // Load owner
       .leftJoin('channel.users', 'user')
       .where('user.id = :userId', { userId: user?.id })
+      .andWhere('channel.isActive = :isActive', { isActive: true })
       .getMany();
     // Trả về danh sách channel, mỗi channel có mảng members đã loại bỏ trường nhạy cảm
     const result = [];
@@ -2097,10 +2098,14 @@ export class ChatService extends BaseService<Message> {
       }
 
       case 'read-one': {
-        // Đọc thông tin channel
-        // data.channelId: string (required)
+        // Đọc thông tin channel với tin nhắn (giống fetchHistory)
+        // data.id: string (required - channelId)
+        // data.pageSize?: number (default 50, max 200)
+        // data.before?: string (messageId cursor để lấy tin nhắn cũ hơn)
+        // data.after?: string (messageId cursor để lấy tin nhắn mới hơn)
+        // data.latest?: boolean (chỉ lấy 1 tin mới nhất)
 
-        if (!data.channelId) {
+        if (!data.id) {
           throw new RpcException({
             msg: 'Thiếu channelId',
             status: 400,
@@ -2108,7 +2113,7 @@ export class ChatService extends BaseService<Message> {
         }
 
         const channel: any = await this.channelRepo.findOne({
-          where: { id: data.channelId },
+          where: { id: data.id },
           relations: ['users', 'owner', 'repositories'],
         });
 
@@ -2124,6 +2129,115 @@ export class ChatService extends BaseService<Message> {
           where: { channel: { id: channel.id } },
         });
 
+        // Lấy tin nhắn giống fetchHistory
+        const pageSize = Math.min(200, Math.max(1, data?.pageSize ?? 50));
+
+        // Helper: lấy anchor (id + send_at)
+        const getAnchor = async (id?: string) => {
+          if (!id) return undefined;
+          return this.messageRepo.findOne({
+            where: { id },
+            select: ['id', 'send_at'],
+          });
+        };
+
+        const anchorBefore = await getAnchor(data?.before);
+        const anchorAfter = !data?.before ? await getAnchor(data?.after) : undefined;
+
+        // Base QB
+        const baseQB = this.messageRepo
+          .createQueryBuilder('message')
+          .leftJoinAndSelect('message.sender', 'sender')
+          .leftJoinAndSelect('message.attachments', 'attachment')
+          .where('message.channelId = :channelId', { channelId: data.id });
+
+        let rows: any[] = [];
+        let hasMoreOlder = false;
+        let hasMoreNewer = false;
+
+        if (data?.latest) {
+          // Chỉ lấy 1 tin mới nhất
+          rows = await baseQB
+            .orderBy('message.send_at', 'DESC')
+            .addOrderBy('message.id', 'DESC')
+            .take(1)
+            .getMany();
+          rows = rows.reverse();
+        } else if (anchorBefore) {
+          // Lấy tin nhắn cũ hơn anchor
+          const r = await baseQB
+            .andWhere(
+              `(message.send_at < :anchorTime) OR (message.send_at = :anchorTime AND message.id < :anchorId)`,
+              { anchorTime: anchorBefore.send_at, anchorId: anchorBefore.id },
+            )
+            .orderBy('message.send_at', 'DESC')
+            .addOrderBy('message.id', 'DESC')
+            .take(pageSize + 1)
+            .getMany();
+
+          hasMoreOlder = r.length > pageSize;
+          rows = r.slice(0, pageSize).reverse();
+        } else if (anchorAfter) {
+          // Lấy tin nhắn mới hơn anchor
+          const rAsc = await baseQB
+            .andWhere(
+              `(message.send_at > :anchorTime) OR (message.send_at = :anchorTime AND message.id > :anchorId)`,
+              { anchorTime: anchorAfter.send_at, anchorId: anchorAfter.id },
+            )
+            .orderBy('message.send_at', 'ASC')
+            .addOrderBy('message.id', 'ASC')
+            .take(pageSize + 1)
+            .getMany();
+
+          hasMoreNewer = rAsc.length > pageSize;
+          rows = rAsc.slice(0, pageSize);
+        } else {
+          // Trang đầu: lấy 50 tin mới nhất
+          const r = await baseQB
+            .orderBy('message.send_at', 'DESC')
+            .addOrderBy('message.id', 'DESC')
+            .take(pageSize + 1)
+            .getMany();
+
+          hasMoreOlder = r.length > pageSize;
+          rows = r.slice(0, pageSize).reverse();
+        }
+
+        // Format messages
+        const messages = rows.map((msg) => {
+          let senderInfo: any = undefined;
+          if (msg.sender) {
+            senderInfo = {
+              id: msg.sender.id,
+              username: msg.sender.username,
+              email: msg.sender.email,
+              avatar: msg.sender.avatar ?? msg.sender.github_avatar ?? null,
+            };
+          }
+
+          const attachments = (msg.attachments || []).map((att: any) => ({
+            id: att.id,
+            filename: att.filename,
+            fileUrl: att.fileUrl,
+            mimeType: att.mimeType,
+            fileSize: att.fileSize,
+            key: att.key,
+          }));
+
+          return {
+            ...msg,
+            channelId: msg.channelId || (msg.channel ? msg.channel.id : null),
+            sender: senderInfo,
+            attachments,
+          };
+        });
+
+        // Cursors
+        const oldest = messages[0];
+        const newest = messages[messages.length - 1];
+        const nextBefore = oldest?.id ?? null;
+        const nextAfter = newest?.id ?? null;
+
         return {
           id: channel.id,
           name: channel.name,
@@ -2132,6 +2246,7 @@ export class ChatService extends BaseService<Message> {
           json_data: channel.json_data,
           member_count: channel.member_count,
           messageCount,
+          isActive: channel.isActive,
           owner: channel.owner
             ? this.remove_field_user({ ...channel.owner })
             : null,
@@ -2145,6 +2260,16 @@ export class ChatService extends BaseService<Message> {
             id: r.id,
             repo_id: r.repo_id,
           })),
+          messages: {
+            items: messages,
+            pageSize: messages.length,
+            hasMoreOlder,
+            hasMoreNewer,
+            cursors: {
+              before: nextBefore,
+              after: nextAfter,
+            },
+          },
           created_at: channel.created_at,
           updated_at: channel.updated_at,
         };
@@ -2518,14 +2643,20 @@ export class ChatService extends BaseService<Message> {
         });
         const totalMessages = await this.messageRepo.count();
 
-        // Lấy top 5 channels có nhiều tin nhắn nhất
-        const topChannels = await this.channelRepo
-          .createQueryBuilder('channel')
-          .leftJoinAndSelect('channel.owner', 'owner')
-          .loadRelationCountAndMap('channel.messageCount', 'channel.messages')
-          .orderBy('channel.messageCount', 'DESC')
-          .take(5)
-          .getMany();
+        // Lấy tất cả channels với owner và messages
+        const allChannels = await this.channelRepo.find({
+          relations: ['owner', 'messages'],
+        });
+
+        // Đếm số messages cho mỗi channel và sắp xếp
+        const channelsWithCount = allChannels.map((ch: any) => ({
+          channel: ch,
+          messageCount: ch.messages?.length || 0,
+        }));
+
+        // Sắp xếp theo số lượng tin nhắn giảm dần và lấy top 5
+        channelsWithCount.sort((a, b) => b.messageCount - a.messageCount);
+        const top5 = channelsWithCount.slice(0, 5);
 
         return {
           totalChannels,
@@ -2533,13 +2664,13 @@ export class ChatService extends BaseService<Message> {
           groupChannels,
           privateChannels,
           totalMessages,
-          topChannels: topChannels.map((ch: any) => ({
-            id: ch.id,
-            name: ch.name,
-            type: ch.type,
-            member_count: ch.member_count,
-            messageCount: ch.messageCount || 0,
-            owner: ch.owner ? this.remove_field_user({ ...ch.owner }) : null,
+          topChannels: top5.map((item: any) => ({
+            id: item.channel.id,
+            name: item.channel.name,
+            type: item.channel.type,
+            member_count: item.channel.member_count,
+            messageCount: item.messageCount,
+            owner: item.channel.owner ? this.remove_field_user({ ...item.channel.owner }) : null,
           })),
         };
       }
