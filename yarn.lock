@@ -1105,6 +1105,24 @@
     google-auth-library "^10.3.0"
     ws "^8.18.0"
 
+"@huggingface/inference@^4.13.4":
+  version "4.13.4"
+  resolved "https://registry.yarnpkg.com/@huggingface/inference/-/inference-4.13.4.tgz#7f4541c65f83bbc64fcc9498c2cc385c8fa504a6"
+  integrity sha512-1G6jBDYLAZw7oNrJdMp+0/CafeoNaCLzrDd9fYSX3nhjzMuyWIPZ/MtP5EwXdC0htlFPx+R6JGqPhctAalQO+w==
+  dependencies:
+    "@huggingface/jinja" "^0.5.1"
+    "@huggingface/tasks" "^0.19.65"
+
+"@huggingface/jinja@^0.5.1":
+  version "0.5.3"
+  resolved "https://registry.yarnpkg.com/@huggingface/jinja/-/jinja-0.5.3.tgz#8182a2d6fc9f84c1539fa12c219a5915cdc41264"
+  integrity sha512-asqfZ4GQS0hD876Uw4qiUb7Tr/V5Q+JZuo2L+BtdrD4U40QU58nIRq3ZSgAzJgT874VLjhGVacaYfrdpXtEvtA==
+
+"@huggingface/tasks@^0.19.65":
+  version "0.19.65"
+  resolved "https://registry.yarnpkg.com/@huggingface/tasks/-/tasks-0.19.65.tgz#a6c7256c7b98a4671204633a38e02f220abf4fca"
+  integrity sha512-ecP5bMLwZRKsln6IhTkicIt8Wzn7cYquKYBkJe7K2qkIvvnhzT32wf9dvvFjRqv+cDzdVxOLEdT0DUkVzGiV5A==
+
 "@humanwhocodes/config-array@^0.13.0":
   version "0.13.0"
   resolved "https://registry.yarnpkg.com/@humanwhocodes/config-array/-/config-array-0.13.0.tgz#fb907624df3256d04b9aa2df50d7aa97ec648748"
@@ -6891,6 +6909,11 @@ open@7:
   dependencies:
     is-docker "^2.0.0"
     is-wsl "^2.1.1"
+
+openai@^6.9.1:
+  version "6.9.1"
+  resolved "https://registry.yarnpkg.com/openai/-/openai-6.9.1.tgz#a591118d79d14ac01870d29efe869743e9b64167"
+  integrity sha512-vQ5Rlt0ZgB3/BNmTa7bIijYFhz3YBceAA3Z4JuoMSBftBF9YqFHIEhZakSs+O/Ad7EaoEimZvHxD5ylRjN11Lg==
 
 optionator@^0.9.3:
   version "0.9.4"

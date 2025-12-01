@@ -6,6 +6,7 @@ import { Channel } from '@myorg/entities';
 import { BaseService } from '@myorg/common';
 import { RpcException } from '@nestjs/microservices';
 import { Repository as RepoEntity } from '@myorg/entities'; // Đảm bảo import đúng entity Repository
+import { ALL_BANNED_KEYWORDS } from './banned-keywords';
 
 @Injectable()
 export class ChatService extends BaseService<Message> {
@@ -14,6 +15,9 @@ export class ChatService extends BaseService<Message> {
    * @param user user hiện tại
    * @param data { id: string, type: 'group' | 'personal' }
    */
+
+  // Danh sách từ khóa vi phạm được import từ file riêng
+  private readonly BANNED_KEYWORDS = ALL_BANNED_KEYWORDS;
 
   constructor(
     @InjectRepository(Message)
@@ -26,7 +30,47 @@ export class ChatService extends BaseService<Message> {
     private readonly attachmentRepo: Repository<Attachment>,
   ) {
     super(messageRepo);
+    console.log('✅ Content moderation với keyword filter đã khởi tạo');
   }
+
+  /* ===================== CONTENT MODERATION ===================== */
+  /**
+   * Kiểm tra nội dung bằng keyword filter (fallback đơn giản)
+   */
+  private simpleKeywordFilter(text: string): { flagged: boolean; categories: string[] } {
+    const lowerText = text.toLowerCase();
+    const foundKeywords: string[] = [];
+    
+    for (const keyword of this.BANNED_KEYWORDS) {
+      if (lowerText.includes(keyword.toLowerCase())) {
+        foundKeywords.push(keyword);
+      }
+    }
+    
+    if (foundKeywords.length > 0) {
+      console.log(`🚫 Simple filter detected banned keywords: ${foundKeywords.join(', ')}`);
+      return { flagged: true, categories: ['banned_keyword'] };
+    }
+    
+    return { flagged: false, categories: [] };
+  }
+
+
+
+  /**
+   * Kiểm tra nội dung tin nhắn có vi phạm chính sách hay không
+   * Sử dụng keyword filter đơn giản
+   * @param text Nội dung tin nhắn cần kiểm tra
+   * @returns { flagged: boolean, categories: string[] }
+   */
+  private async moderateContent(text: string): Promise<{ flagged: boolean; categories: string[] }> {
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      return { flagged: false, categories: [] };
+    }
+
+    return this.simpleKeywordFilter(text);
+  }
+
 
   async joinChannel(user: any, data: { id: string; type: string }) {
     if (!user || !user.id) {
@@ -268,6 +312,32 @@ export class ChatService extends BaseService<Message> {
     if (!channel)
       throw new RpcException({ msg: 'Kênh chat không tồn tại', status: 404 });
 
+    // Kiểm tra kênh phải active
+    if (!channel.isActive) {
+      throw new RpcException({
+        msg: 'Kênh đã bị vô hiệu hóa, không thể gửi tin nhắn',
+        status: 403,
+      });
+    }
+
+    // ✅ Kiểm tra nội dung tin nhắn trước khi lưu (chỉ với message và reply-message)
+    let finalText = data.text;
+    const messageType = data.type || 'message';
+    
+    if ((messageType === 'message' || messageType === 'reply-message') && finalText) {
+      const moderation = await this.moderateContent(finalText);
+      
+      if (moderation.flagged) {
+        console.warn(`⚠️ Content flagged for user ${user.id} in channel ${data.channelId}:`, moderation.categories);
+        
+        // Thay đổi nội dung tin nhắn thành thông báo vi phạm
+        finalText = '⚠️ Tin nhắn có nội dung không phù hợp';
+        
+        // Log lại nội dung gốc để audit (nếu cần)
+        console.log(`📝 Original flagged message: "${data.text.substring(0, 100)}..."`);
+      }
+    }
+
     // 👉 Update message if requested
     if (data.isUpdate && data.id) {
       const existing = await this.messageRepo.findOne({
@@ -310,10 +380,11 @@ export class ChatService extends BaseService<Message> {
 
     const messageData = {
       ...data,
+      text: finalText, // Sử dụng text đã được kiểm duyệt
       channel,
       sender,
       send_at: data.send_at,
-      type: data.type || 'message',
+      type: messageType,
       json_data: data.json_data || null,
     };
 
@@ -466,11 +537,20 @@ export class ChatService extends BaseService<Message> {
       type?: 'group' | 'group-private';
       key?: string;
       json_data?: any;
+      isActive?: boolean; // Cập nhật trạng thái active
       addUserIds?: (string | number)[]; // Thêm thành viên
       removeUserIds?: (string | number)[]; // Xóa thành viên
     },
   ) {
-    // 1. Kiểm tra channel tồn tại
+    // 1. Kiểm tra user tồn tại và lấy role
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+
+    const isAdmin = user.role === 'admin';
+
+    // 2. Kiểm tra channel tồn tại
     const channel: any = await this.channelRepo.findOne({
       where: { id: channelId },
       relations: ['users', 'owner'],
@@ -480,7 +560,7 @@ export class ChatService extends BaseService<Message> {
       throw new RpcException({ msg: 'Không tìm thấy kênh', status: 404 });
     }
 
-    // 2. Kiểm tra quyền: chỉ owner mới được update (trừ personal channel)
+    // 3. Kiểm tra quyền: admin có toàn quyền, không cần là thành viên
     if (channel.type === 'personal') {
       throw new RpcException({
         msg: 'Không thể cập nhật kênh personal',
@@ -488,51 +568,59 @@ export class ChatService extends BaseService<Message> {
       });
     }
 
-    const isOwner =
-      channel.owner && String(channel.owner.id) === String(userId);
+    // Nếu không phải admin, kiểm tra quyền owner hoặc PM
+    if (!isAdmin) {
+      const isOwner =
+        channel.owner && String(channel.owner.id) === String(userId);
 
-    // 2.1. Nếu là group-private, kiểm tra thêm role PM
-    let isPM = false;
-    if (channel.type === 'group-private' && channel.json_data) {
-      try {
-        const jsonData =
-          typeof channel.json_data === 'string'
-            ? JSON.parse(channel.json_data)
-            : channel.json_data;
+      // 3.1. Nếu là group-private, kiểm tra thêm role PM
+      let isPM = false;
+      if (channel.type === 'group-private' && channel.json_data) {
+        try {
+          const jsonData =
+            typeof channel.json_data === 'string'
+              ? JSON.parse(channel.json_data)
+              : channel.json_data;
 
-        if (jsonData?.userRoles && Array.isArray(jsonData.userRoles)) {
-          const userRole = jsonData.userRoles.find(
-            (ur: any) => String(ur.userId) === String(userId),
-          );
-          // Role 1 = PM
-          if (userRole && userRole.roles && Array.isArray(userRole.roles)) {
-            isPM = userRole.roles.includes(1);
+          if (jsonData?.userRoles && Array.isArray(jsonData.userRoles)) {
+            const userRole = jsonData.userRoles.find(
+              (ur: any) => String(ur.userId) === String(userId),
+            );
+            // Role 1 = PM
+            if (userRole && userRole.roles && Array.isArray(userRole.roles)) {
+              isPM = userRole.roles.includes(1);
+            }
           }
+        } catch (error) {
+          console.error('Error parsing json_data:', error);
         }
-      } catch (error) {
-        console.error('Error parsing json_data:', error);
       }
-    }
 
-    // Kiểm tra quyền: owner HOẶC PM (nếu là group-private)
-    const hasPermission =
-      isOwner ||
-      (channel.type === 'group-private' && isPM) ||
-      channel.type === 'group';
+      // Kiểm tra quyền: owner HOẶC PM (nếu là group-private)
+      const hasPermission =
+        isOwner ||
+        (channel.type === 'group-private' && isPM) ||
+        channel.type === 'group';
 
-    if (!hasPermission) {
-      throw new RpcException({
-        msg:
-          channel.type === 'group-private'
-            ? 'Bạn không có quyền cập nhật kênh này (chỉ Owner hoặc PM)'
-            : 'Bạn không có quyền cập nhật kênh này',
-        status: 403,
-      });
+      if (!hasPermission) {
+        throw new RpcException({
+          msg:
+            channel.type === 'group-private'
+              ? 'Bạn không có quyền cập nhật kênh này (chỉ Owner hoặc PM)'
+              : 'Bạn không có quyền cập nhật kênh này',
+          status: 403,
+        });
+      }
     }
 
     // 3. Cập nhật tên kênh (nếu có)
     if (params.name !== undefined && params.name.trim()) {
       channel.name = params.name.trim();
+    }
+
+    // 3.5. Cập nhật trạng thái isActive (nếu có)
+    if (params.isActive !== undefined) {
+      channel.isActive = params.isActive;
     }
 
     // 4. Cập nhật type (chỉ cho phép chuyển đổi giữa group và group-private)
@@ -673,6 +761,7 @@ export class ChatService extends BaseService<Message> {
       key: updatedChannel.key,
       json_data: updatedChannel.json_data,
       member_count: updatedChannel.member_count,
+      isActive: updatedChannel.isActive,
       owner: updatedChannel.owner
         ? this.remove_field_user({ ...updatedChannel.owner })
         : null,
@@ -765,18 +854,33 @@ export class ChatService extends BaseService<Message> {
     );
 
     // 1) Kiểm tra quyền truy cập kênh và channel phải active
-    const isMember = await this.channelRepo
-      .createQueryBuilder('c')
-      .innerJoin('c.users', 'u', 'u.id = :userId', { userId: user.id })
-      .where('c.id = :channelId', { channelId })
-      .andWhere('c.isActive = :isActive', { isActive: true })
-      .getExists();
+    // Kiểm tra channel tồn tại và active
+    const channelExists = await this.channelRepo.findOne({
+      where: { id: channelId, isActive: true },
+      select: ['id'],
+    });
 
-    if (!isMember) {
+    if (!channelExists) {
       throw new RpcException({
-        msg: 'Không tìm thấy kênh chat hoặc bạn không có quyền',
+        msg: 'Không tìm thấy kênh chat hoặc kênh đã bị vô hiệu hóa',
         status: 404,
       });
+    }
+
+    // Nếu user không phải admin, kiểm tra membership
+    if (user.role !== 'admin') {
+      const isMember = await this.channelRepo
+        .createQueryBuilder('c')
+        .innerJoin('c.users', 'u', 'u.id = :userId', { userId: user.id })
+        .where('c.id = :channelId', { channelId })
+        .getExists();
+
+      if (!isMember) {
+        throw new RpcException({
+          msg: 'Bạn không có quyền truy cập kênh này',
+          status: 403,
+        });
+      }
     }
 
     // 2) Lấy channel + owner + users (để build members/sender)
@@ -2423,10 +2527,14 @@ export class ChatService extends BaseService<Message> {
           }
         }
 
-        // Cập nhật key và json_data
+        // Cập nhật key và json_data (chỉ cho group-private)
         if (channel.type === 'group-private') {
           if (data.key !== undefined) channel.key = data.key;
           if (data.json_data !== undefined) channel.json_data = data.json_data;
+        } else if (channel.type === 'group') {
+          // Kênh group không có key và json_data
+          channel.key = null;
+          channel.json_data = null;
         }
 
         // Chuyển owner (admin có thể chuyển owner cho bất kỳ ai)
@@ -2453,30 +2561,98 @@ export class ChatService extends BaseService<Message> {
           channel.owner = newOwner;
         }
 
-        // Thêm thành viên
-        if (data.addUserIds && Array.isArray(data.addUserIds)) {
+        // Thêm thành viên (cho cả group và group-private)
+        if (data.addUserIds && Array.isArray(data.addUserIds) && data.addUserIds.length > 0) {
+          if (channel.type !== 'group' && channel.type !== 'group-private') {
+            throw new RpcException({
+              msg: 'Chỉ có thể thêm thành viên vào kênh group hoặc group-private',
+              status: 400,
+            });
+          }
+
           const usersToAdd = await this.userRepo.findBy({
             id: In(data.addUserIds),
           });
+
+          if (usersToAdd.length !== data.addUserIds.length) {
+            throw new RpcException({
+              msg: 'Một số thành viên không tồn tại',
+              status: 400,
+            });
+          }
+
           const currentMemberIds = new Set(
             channel.users.map((u: any) => String(u.id)),
           );
           const newMembers = usersToAdd.filter(
             (u: any) => !currentMemberIds.has(String(u.id)),
           );
+
           if (newMembers.length > 0) {
             channel.users.push(...newMembers);
             channel.member_count = channel.users.length;
+
+            // Nếu là group-private và có json_data.userRoles, cần cập nhật roles cho members mới
+            if (channel.type === 'group-private' && channel.json_data) {
+              try {
+                const jsonData = typeof channel.json_data === 'string'
+                  ? JSON.parse(channel.json_data)
+                  : channel.json_data;
+
+                if (jsonData.userRoles && Array.isArray(jsonData.userRoles)) {
+                  // Thêm userRoles mặc định (role = 4: member) cho các thành viên mới nếu chưa có
+                  for (const newMember of newMembers) {
+                    const existingRole = jsonData.userRoles.find(
+                      (ur: any) => String(ur.userId) === String(newMember.id)
+                    );
+                    if (!existingRole) {
+                      jsonData.userRoles.push({
+                        userId: newMember.id,
+                        roles: [4], // Default role: member
+                      });
+                    }
+                  }
+                  channel.json_data = jsonData;
+                }
+              } catch (error) {
+                console.error('Error updating json_data with new members:', error);
+              }
+            }
           }
         }
 
-        // Xóa thành viên (admin có thể xóa cả owner)
-        if (data.removeUserIds && Array.isArray(data.removeUserIds)) {
+        // Xóa thành viên (admin có thể xóa cả owner, cho cả group và group-private)
+        if (data.removeUserIds && Array.isArray(data.removeUserIds) && data.removeUserIds.length > 0) {
+          if (channel.type !== 'group' && channel.type !== 'group-private') {
+            throw new RpcException({
+              msg: 'Chỉ có thể xóa thành viên khỏi kênh group hoặc group-private',
+              status: 400,
+            });
+          }
           const removeIdSet = new Set(data.removeUserIds.map(String));
           channel.users = channel.users.filter(
             (u: any) => !removeIdSet.has(String(u.id)),
           );
           channel.member_count = channel.users.length;
+
+          // Nếu là group-private và có json_data.userRoles, cần xóa roles của members đã xóa
+          if (channel.type === 'group-private' && channel.json_data) {
+            try {
+              const jsonData = typeof channel.json_data === 'string'
+                ? JSON.parse(channel.json_data)
+                : channel.json_data;
+
+              if (jsonData.userRoles && Array.isArray(jsonData.userRoles)) {
+                // Xóa userRoles của các thành viên đã bị xóa
+                jsonData.userRoles = jsonData.userRoles.filter(
+                  (ur: any) => !removeIdSet.has(String(ur.userId))
+                );
+                channel.json_data = jsonData;
+              }
+            } catch (error) {
+              console.error('Error updating json_data after removing members:', error);
+            }
+          }
 
           // FIX: Kiểm tra channel.owner trước khi truy cập thuộc tính
           if (channel.owner) {
@@ -2536,15 +2712,15 @@ export class ChatService extends BaseService<Message> {
         // data.channelId: string (required)
         // data.hard?: boolean (true: xóa vĩnh viễn kể cả messages, false: chỉ xóa channel)
 
-        if (!data.channelId) {
+        if (!data.id) {
           throw new RpcException({
-            msg: 'Thiếu channelId',
+            msg: 'Thiếu id',
             status: 400,
           });
         }
 
         const channel = await this.channelRepo.findOne({
-          where: { id: data.channelId },
+          where: { id: data.id },
           relations: ['users', 'messages', 'repositories'],
         });
 
@@ -2672,6 +2848,59 @@ export class ChatService extends BaseService<Message> {
             messageCount: item.messageCount,
             owner: item.channel.owner ? this.remove_field_user({ ...item.channel.owner }) : null,
           })),
+        };
+      }
+
+      case 'delete-message-channel': {
+        // Xóa tin nhắn trong channel (Admin có toàn quyền)
+        // data.messageId: string (required)
+        // data.channelId?: string (optional, để verify)
+
+        if (!data.messageId) {
+          throw new RpcException({
+            msg: 'Thiếu messageId',
+            status: 400,
+          });
+        }
+
+        const message = await this.messageRepo.findOne({
+          where: { id: data.messageId },
+          relations: ['channel', 'sender', 'attachments'],
+        });
+
+        if (!message) {
+          throw new RpcException({
+            msg: 'Không tìm thấy tin nhắn',
+            status: 404,
+          });
+        }
+
+        // Verify channelId nếu có
+        if (data.channelId && String(message.channel?.id) !== String(data.channelId)) {
+          throw new RpcException({
+            msg: 'Tin nhắn không thuộc channel này',
+            status: 400,
+          });
+        }
+
+        const messageInfo = {
+          id: message.id,
+          text: message.text,
+          type: message.type,
+          channelId: message.channel?.id || null,
+          channelName: message.channel?.name || null,
+          senderId: message.sender?.id || null,
+          senderUsername: message.sender?.username || null,
+          send_at: message.send_at,
+          attachmentCount: message.attachments?.length || 0,
+        };
+
+        // Xóa tin nhắn (attachments sẽ được xóa tự động nếu có cascade)
+        await this.messageRepo.remove(message);
+
+        return {
+          msg: 'Đã xóa tin nhắn thành công',
+          messageInfo,
         };
       }
 

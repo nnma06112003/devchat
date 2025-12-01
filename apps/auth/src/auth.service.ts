@@ -462,16 +462,6 @@ export class AuthService {
 
 
     switch(method) { 
-      case 'deactivate':
-        const userdeactivate: any = await this.userRepository.findById(data.userId);
-        userdeactivate.isActive = false;
-        await this.userRepository.save(userdeactivate);
-        break;
-      case 'activate':  
-        const userToActivate: any = await this.userRepository.findById(data.userId);
-        userToActivate.isActive = true;
-        await this.userRepository.save(userToActivate);
-        break;
       
       case 'create':
         // Tạo user mới
@@ -623,6 +613,36 @@ export class AuthService {
           msg: `Đã ${targetUser.isActive ? 'kích hoạt' : 'vô hiệu hóa'} tài khoản`,
           userId: targetUser.id,
           isActive: targetUser.isActive,
+        };
+      }
+      case 'set-toggle-admin': {
+        // data.id required
+        const targetUser: any = await this.userRepository.findById(data.id);
+        if (!targetUser) {
+          throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+        }
+
+        // Không cho phép toggle admin cho root admin
+        if (targetUser.email === 'admin@example.com') {
+          throw new RpcException({
+            msg: 'Không thể thay đổi quyền của tài khoản root admin',
+            status: 403,
+          });
+        }
+
+        // Đảo role giữa admin và user
+        if (targetUser.role === 'admin') {
+          targetUser.role = 'user';
+        } else {
+          targetUser.role = 'admin';
+        }
+        
+        await this.userRepository.save(targetUser);
+
+        return {
+          msg: `Đã ${targetUser.role === 'admin' ? 'cấp quyền admin' : 'thu hồi quyền admin'} cho tài khoản`,
+          userId: targetUser.id,
+          role: targetUser.role,
         };
       }
       default:

@@ -12,6 +12,7 @@ export type AuthSocket = Socket & { user?: { id: string } };
 @Injectable()
 export class ChatSocketService {
   private server: Server;
+
   constructor(
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
     private readonly gw: GatewayService,
@@ -414,6 +415,7 @@ export class ChatSocketService {
       //   json_data_type: typeof message.json_data
       // });
 
+      // Content moderation đã được xử lý ở chat service
       const res: any = await this.gw.exec('chat', 'sendMessage', {
         ...message,
         send_at: now,
@@ -437,7 +439,7 @@ export class ChatSocketService {
       const finalMessage = {
         ...datas,
         channelId: message.channelId,
-        type: typeMsg,
+        type: datas.type || typeMsg,
         fakeID: tempId,
         isPin: pendingMsg.isPin ?? false,
         isUpdate: message.isUpdate ?? false,
