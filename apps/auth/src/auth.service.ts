@@ -590,6 +590,87 @@ export class AuthService {
           userToUpdate.github_verified = data.github_verified;
         await this.userRepository.save(userToUpdate);
         break;
+      case 'delete': {
+        const userToDelete: any = await this.userRepository.findById(data.id);
+        if (!userToDelete) {
+          throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+        }
+
+        // Validations
+        if (userToDelete.email === 'admin@example.com') {
+          throw new RpcException({
+            msg: 'Không thể xóa tài khoản root admin',
+            status: 403,
+          });
+        }
+
+        if (userToDelete.id === userId) {
+          throw new RpcException({
+            msg: 'Không thể xóa tài khoản của chính bạn',
+            status: 403,
+          });
+        }
+
+        try {
+          // Sử dụng QueryBuilder với TypeORM entities
+          const queryRunner = this.userRepo.manager.connection.createQueryRunner();
+          
+          await queryRunner.connect();
+          await queryRunner.startTransaction();
+
+          try {
+            // 1. Xóa channel memberships
+            await queryRunner.manager
+              .createQueryBuilder()
+              .delete()
+              .from('channel_members')
+              .where('user_id = :userId', { userId: userToDelete.id })
+              .execute();
+
+            // 2. Xóa messages
+            await queryRunner.manager
+              .createQueryBuilder()
+              .delete()
+              .from('messages')
+              .where('senderId = :userId', { userId: userToDelete.id })
+              .execute();
+
+            // 3. Update channels owner
+            await queryRunner.manager
+              .createQueryBuilder()
+              .update('channels')
+              .set({ owner: null })
+              .where('owner.id = :userId', { userId: userToDelete.id })
+              .execute();
+
+            // 4. Xóa user
+            await queryRunner.manager
+              .createQueryBuilder()
+              .delete()
+              .from('users')
+              .where('id = :id', { id: userToDelete.id })
+              .execute(); 
+
+            await queryRunner.commitTransaction();
+
+            return {
+              msg: 'Đã xóa người dùng thành công',
+              userId: userToDelete.id,
+            };
+          } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+          } finally {
+            await queryRunner.release();
+          }
+        } catch (error) {
+          console.error('Error deleting user:', error);
+          throw new RpcException({
+            msg: 'Không thể xóa người dùng: ' + error,
+            status: 500,
+          });
+        }
+      }
       case 'toggle-active': {
         // data.userId required
         const targetUser: any = await this.userRepository.findById(data.id);
