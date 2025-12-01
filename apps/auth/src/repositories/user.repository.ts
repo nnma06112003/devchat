@@ -51,4 +51,9 @@ export class UserRepository {
   async findByVerificationToken(token: string): Promise<User | null> {
     return this.repository.findOne({ where: { verification_token: token } });
   }
+
+  async remove(id: string): Promise<void> {
+    await this.repository.delete(id);
+  }
+
 }
