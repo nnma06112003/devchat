@@ -807,4 +807,15 @@ export class GatewayController {
     return this.gw.exec('chat', 'admin_channel_management', payload);
   }
 
+
+
+
+  @UseGuards(JwtAuthGuard)
+  @Post('admin/files')
+  async adminFileManagement(@Body() dto: any, @Req() req: Request) {
+    const user = req.user as any;
+    const payload = { user, ...dto };
+    return this.gw.exec('upload', 'admin_file_management', payload);
+  }
+
 }

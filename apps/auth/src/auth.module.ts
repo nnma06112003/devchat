@@ -13,6 +13,7 @@ import { DatabaseModule } from '@myorg/database';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import path from 'path';
+import Redis from 'ioredis';
 
 @Module({
   imports: [
@@ -56,7 +57,15 @@ import path from 'path';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, UserRepository, JwtStrategy, GithubStrategy],
+  providers: [AuthService, UserRepository, JwtStrategy, GithubStrategy,{
+      provide: 'REDIS_CLIENT',
+      useFactory: async (config: ConfigService) => {
+        return new Redis({
+          host: 'localhost',  // chỉnh theo config của bạn
+          port: 6379,
+        });
+      },
+    }],
   exports: [AuthService, JwtModule, PassportModule],
 })
 export class AuthModule {}

@@ -29,6 +29,13 @@ export class UploadController {
         );
       case 'getSheetUrl':
         return await this.UploadService.getSheetUrl(payload.data.channelId);
+
+      case 'admin_file_management':
+        return await this.UploadService.manageUserFiles(
+          payload.data.userId,
+          payload.data.method,
+          payload.data,
+        );
       default:
         return { error: 'Unknown command' };
     }

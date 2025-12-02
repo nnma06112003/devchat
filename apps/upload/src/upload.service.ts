@@ -236,4 +236,505 @@ export class UploadService {
       throw new InternalServerErrorException('Could not generate sheet URL');
     }
   }
+
+  /**
+   * Quản lý file của user - hỗ trợ nhiều operations
+   * @param userId ID của user
+   * @param method Phương thức: 'list' | 'search' | 'filter' | 'unlink' | 'list-channels-with-files'
+   * @param data Dữ liệu cho từng method
+   */
+  async manageUserFiles(
+    userId: string | number,
+    method: 'list' | 'search' | 'filter' | 'unlink' | 'list-channels-with-files',
+    data: {
+      // Common params
+      limit?: number;
+      cursor?: number;
+      
+      // Search params
+      filename?: string;
+      
+      // Filter params
+      channelId?: number | string;
+      mimeType?: string;
+      minSize?: number;
+      maxSize?: number;
+      startDate?: Date;
+      endDate?: Date;
+      
+      // Unlink params
+      attachmentId?: number | string;
+      messageId?: number | string;
+    },
+  ) {
+    switch (method) {
+      case 'list':
+        return this.listUserFiles(userId, data);
+      
+      case 'search':
+        return this.searchUserFiles(userId, data);
+      
+      case 'filter':
+        return this.filterUserFiles(userId, data);
+      
+      case 'unlink':
+        return this.unlinkFile(userId, data);
+      
+      case 'list-channels-with-files':
+        return this.listChannelsWithFiles(userId, data);
+      
+      default:
+        throw new Error(`Invalid method: ${method}`);
+    }
+  }
+
+  /**
+   * Case 1: Liệt kê tất cả file của user
+   */
+  private async listUserFiles(
+    userId: string | number,
+    data: { limit?: number; cursor?: number },
+  ) {
+    const { limit = 50, cursor } = data;
+
+    const qb = this.attachmentRepo
+      .createQueryBuilder('attachment')
+      .leftJoinAndSelect('attachment.message', 'message')
+      .leftJoinAndSelect('message.channel', 'channel')
+      .leftJoin('message.sender', 'sender')
+      .addSelect(['sender.id', 'sender.username', 'sender.email'])
+      .where('sender.id = :userId', { userId })
+      .orderBy('attachment.created_at', 'DESC')
+      .addOrderBy('attachment.id', 'DESC')
+      .limit(limit);
+
+    if (cursor) {
+      qb.andWhere('attachment.id < :cursor', { cursor });
+    }
+
+    const attachments = await qb.getMany();
+
+    const formattedFiles = attachments.map((att) => ({
+      id: att.id,
+      filename: att.filename,
+      fileUrl: att.fileUrl,
+      mimeType: att.mimeType,
+      fileSize: att.fileSize,
+      key: att.key,
+      created_at: att.created_at,
+      channel: att.message?.channel
+        ? {
+            id: att.message.channel.id,
+            name: att.message.channel.name,
+            type: att.message.channel.type,
+          }
+        : null,
+      message: att.message
+        ? {
+            id: att.message.id,
+            text: att.message.text,
+            send_at: att.message.send_at,
+          }
+        : null,
+    }));
+
+    const nextCursor =
+      attachments.length === limit
+        ? attachments[attachments.length - 1].id
+        : null;
+
+    return {
+      files: formattedFiles,
+      total: formattedFiles.length,
+      nextCursor,
+      hasMore: attachments.length === limit,
+    };
+  }
+
+  /**
+   * Case 2: Tìm kiếm file theo tên
+   */
+  private async searchUserFiles(
+    userId: string | number,
+    data: { filename?: string; limit?: number; cursor?: number },
+  ) {
+    const { filename, limit = 50, cursor } = data;
+
+    if (!filename) {
+      throw new Error('Filename is required for search');
+    }
+
+    const qb = this.attachmentRepo
+      .createQueryBuilder('attachment')
+      .leftJoinAndSelect('attachment.message', 'message')
+      .leftJoinAndSelect('message.channel', 'channel')
+      .leftJoin('message.sender', 'sender')
+      .addSelect(['sender.id', 'sender.username', 'sender.email'])
+      .where('sender.id = :userId', { userId })
+      .andWhere('attachment.filename ILIKE :filename', {
+        filename: `%${filename}%`,
+      })
+      .orderBy('attachment.created_at', 'DESC')
+      .addOrderBy('attachment.id', 'DESC')
+      .limit(limit);
+
+    if (cursor) {
+      qb.andWhere('attachment.id < :cursor', { cursor });
+    }
+
+    const attachments = await qb.getMany();
+
+    const formattedFiles = attachments.map((att) => ({
+      id: att.id,
+      filename: att.filename,
+      fileUrl: att.fileUrl,
+      mimeType: att.mimeType,
+      fileSize: att.fileSize,
+      key: att.key,
+      created_at: att.created_at,
+      channel: att.message?.channel
+        ? {
+            id: att.message.channel.id,
+            name: att.message.channel.name,
+            type: att.message.channel.type,
+          }
+        : null,
+      message: att.message
+        ? {
+            id: att.message.id,
+            text: att.message.text,
+            send_at: att.message.send_at,
+          }
+        : null,
+    }));
+
+    const nextCursor =
+      attachments.length === limit
+        ? attachments[attachments.length - 1].id
+        : null;
+
+    return {
+      files: formattedFiles,
+      total: formattedFiles.length,
+      searchQuery: filename,
+      nextCursor,
+      hasMore: attachments.length === limit,
+    };
+  }
+
+  /**
+   * Case 3: Filter file theo nhiều tiêu chí
+   */
+  private async filterUserFiles(
+    userId: string | number,
+    data: {
+      channelId?: number | string;
+      mimeType?: string;
+      minSize?: number;
+      maxSize?: number;
+      startDate?: Date;
+      endDate?: Date;
+      limit?: number;
+      cursor?: number;
+    },
+  ) {
+    const {
+      channelId,
+      mimeType,
+      minSize,
+      maxSize,
+      startDate,
+      endDate,
+      limit = 50,
+      cursor,
+    } = data;
+
+    // Build where condition
+    const whereCondition: any = {
+      message: {
+        sender: { id: userId },
+      },
+    };
+
+    // Lấy tất cả attachments của user
+    const allAttachments = await this.attachmentRepo.find({
+      where: whereCondition,
+      relations: ['message', 'message.channel', 'message.sender'],
+      order: {
+        created_at: 'DESC',
+        id: 'DESC',
+      },
+    });
+
+    // Filter trong JavaScript
+    let filteredAttachments = allAttachments.filter((att) => {
+      // Filter by cursor (pagination)
+      if (cursor && att.id >= cursor) {
+        return false;
+      }
+
+      // Filter by channel
+      if (channelId !== undefined && channelId !== null && channelId !== '') {
+        if (!att.message?.channel || att.message.channel.id != channelId) {
+          return false;
+        }
+      }
+
+      // Filter by mimeType
+      if (mimeType) {
+        if (!att.mimeType || !att.mimeType.toLowerCase().includes(mimeType.toLowerCase())) {
+          return false;
+        }
+      }
+
+      // Filter by file size range
+      if (minSize !== undefined && att.fileSize !== undefined && att.fileSize < minSize) {
+        return false;
+      }
+      if (maxSize !== undefined && att.fileSize !== undefined && att.fileSize > maxSize) {
+        return false;
+      }
+
+      // Filter by date range
+      if (startDate && att.created_at < startDate) {
+        return false;
+      }
+      if (endDate && att.created_at > endDate) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // Limit results
+    const attachments = filteredAttachments.slice(0, limit);
+
+    // Format results
+    const formattedFiles = attachments.map((att) => ({
+      id: att.id,
+      filename: att.filename,
+      fileUrl: att.fileUrl,
+      mimeType: att.mimeType,
+      fileSize: att.fileSize,
+      key: att.key,
+      created_at: att.created_at,
+      channel: att.message?.channel
+        ? {
+            id: att.message.channel.id,
+            name: att.message.channel.name,
+            type: att.message.channel.type,
+          }
+        : null,
+      message: att.message
+        ? {
+            id: att.message.id,
+            text: att.message.text,
+            send_at: att.message.send_at,
+          }
+        : null,
+    }));
+
+    const nextCursor =
+      attachments.length === limit
+        ? attachments[attachments.length - 1].id
+        : null;
+
+    return {
+      files: formattedFiles,
+      total: formattedFiles.length,
+      filters: {
+        channelId,
+        mimeType,
+        minSize,
+        maxSize,
+        startDate,
+        endDate,
+      },
+      nextCursor,
+      hasMore: attachments.length === limit,
+    };
+  }
+
+  /**
+   * Case 4: Xóa liên kết file khỏi message/channel
+   * - Chỉ xóa attachment record trong DB
+   * - Không xóa file trên R2 (vẫn giữ để recovery nếu cần)
+   */
+  private async unlinkFile(
+    userId: string | number,
+    data: {
+      attachmentId?: number | string;
+      messageId?: number | string;
+    },
+  ) {
+    const { attachmentId, messageId } = data;
+
+    if (!attachmentId && !messageId) {
+      throw new Error('Either attachmentId or messageId is required');
+    }
+
+    // Xóa theo attachmentId
+    if (attachmentId) {
+      const attachment = await this.attachmentRepo.findOne({
+        where: { id: Number(attachmentId) },
+        relations: ['message', 'message.sender'],
+      });
+
+      if (!attachment) {
+        throw new Error(`Attachment ${attachmentId} not found`);
+      }
+
+      // Kiểm tra quyền: chỉ owner của message mới được xóa
+      if (String(attachment.message.sender.id) !== String(userId)) {
+        throw new Error('You do not have permission to unlink this file');
+      }
+
+      await this.attachmentRepo.remove(attachment);
+
+      return {
+        success: true,
+        message: 'File unlinked successfully',
+        unlinkedFile: {
+          id: attachment.id,
+          filename: attachment.filename,
+          key: attachment.key,
+        },
+      };
+    }
+
+    // Xóa tất cả attachments của message
+    if (messageId) {
+      const attachments = await this.attachmentRepo.find({
+        where: { message: { id: Number(messageId) } },
+        relations: ['message', 'message.sender'],
+      });
+
+      if (attachments.length === 0) {
+        throw new Error(`No attachments found for message ${messageId}`);
+      }
+
+      // Kiểm tra quyền
+      const firstAttachment = attachments[0];
+      if (String(firstAttachment.message.sender.id) !== String(userId)) {
+        throw new Error(
+          'You do not have permission to unlink files from this message',
+        );
+      }
+
+      await this.attachmentRepo.remove(attachments);
+
+      return {
+        success: true,
+        message: 'All files unlinked successfully',
+        unlinkedFiles: attachments.map((att) => ({
+          id: att.id,
+          filename: att.filename,
+          key: att.key,
+        })),
+        count: attachments.length,
+      };
+    }
+  }
+
+  /**
+   * Case 5: Liệt kê các channel có file của user
+   * Trả về danh sách channels và số lượng file trong mỗi channel
+   */
+  private async listChannelsWithFiles(
+    userId: string | number,
+    data: { limit?: number; cursor?: number },
+  ) {
+    const { limit = 50, cursor } = data;
+
+    // Sử dụng repository find với relations thay vì query builder
+    const whereCondition: any = {
+      message: {
+        sender: { id: userId },
+        channel: { id: cursor ? { $lt: cursor } : undefined },
+      },
+    };
+
+    // Nếu không có cursor, bỏ điều kiện id
+    if (!cursor) {
+      delete whereCondition.message.channel.id;
+    }
+
+    // Lấy tất cả attachments của user có channel
+    const attachments = await this.attachmentRepo.find({
+      where: {
+        message: {
+          sender: { id: userId },
+        },
+      },
+      relations: ['message', 'message.channel', 'message.sender'],
+      order: {
+        created_at: 'DESC',
+      },
+    });
+
+    // Filter ra những attachment có channel
+    const validAttachments = attachments.filter(
+      (att) => att.message?.channel?.id,
+    );
+
+    // Nhóm theo channel và đếm số lượng file
+    const channelMap = new Map<
+      number,
+      {
+        channelId: number | string;
+        channelName: string;
+        channelType: string;
+        fileCount: number;
+        lastFileDate: Date;
+      }
+    >();
+
+    for (const att of validAttachments) {
+      const channelId = Number(att.message.channel.id);
+      
+      if (channelMap.has(channelId)) {
+        const existing = channelMap.get(channelId)!;
+        existing.fileCount += 1;
+        
+        // Cập nhật lastFileDate nếu attachment hiện tại mới hơn
+        if (att.created_at > existing.lastFileDate) {
+          existing.lastFileDate = att.created_at;
+        }
+      } else {
+        channelMap.set(channelId, {
+          channelId: att.message.channel.id,
+          channelName: att.message.channel.name,
+          channelType: att.message.channel.type,
+          fileCount: 1,
+          lastFileDate: att.created_at,
+        });
+      }
+    }
+
+    // Chuyển Map thành array và sắp xếp theo lastFileDate
+    let channels = Array.from(channelMap.values()).sort(
+      (a, b) => b.lastFileDate.getTime() - a.lastFileDate.getTime(),
+    );
+
+    // Áp dụng cursor pagination
+    if (cursor) {
+      const cursorNum = Number(cursor);
+      channels = channels.filter((ch) => Number(ch.channelId) < cursorNum);
+    }
+
+    // Giới hạn số lượng kết quả
+    channels = channels.slice(0, limit);
+
+    const nextCursor =
+      channels.length === limit
+        ? channels[channels.length - 1].channelId
+        : null;
+
+    return {
+      channels,
+      total: channels.length,
+      nextCursor,
+      hasMore: channels.length === limit,
+    };
+  }
 }

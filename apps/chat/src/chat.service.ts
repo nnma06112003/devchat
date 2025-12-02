@@ -1458,7 +1458,17 @@ export class ChatService extends BaseService<Message> {
     const limit = data.limit ?? 20;
     const page = data.page ?? 1;
 
-    // 1. Kiểm tra channel tồn tại và user là thành viên
+    // 1. Kiểm tra user role
+    const user = await this.userRepo.findOne({ 
+      where: { id: userId },
+      select: ['id', 'role']
+    });
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+    const isAdmin = user.role === 'admin';
+
+    // 2. Kiểm tra channel tồn tại và user là thành viên (admin bỏ qua check membership)
     const channel = await this.channelRepo.findOne({
       where: { id: channelId },
       relations: ['users', 'repositories', 'repositories.user'],
@@ -1469,15 +1479,19 @@ export class ChatService extends BaseService<Message> {
     if (!channel.isActive) {
       throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
     }
-    const isMember = channel.users.some((u) => String(u.id) === String(userId));
-    if (!isMember) {
-      throw new RpcException({
-        msg: 'Bạn không phải thành viên của kênh này',
-        status: 403,
-      });
+
+    // Admin không cần check membership
+    if (!isAdmin) {
+      const isMember = channel.users.some((u) => String(u.id) === String(userId));
+      if (!isMember) {
+        throw new RpcException({
+          msg: 'Bạn không phải thành viên của kênh này',
+          status: 403,
+        });
+      }
     }
 
-    // 2. Lấy danh sách repo, sort theo id
+    // 3. Lấy danh sách repo, sort theo id
     let repos = [...(channel.repositories || [])];
     repos.sort((a, b) =>
       order === 'asc'
@@ -1485,13 +1499,13 @@ export class ChatService extends BaseService<Message> {
         : Number(b.id) - Number(a.id),
     );
 
-    // 3. Phân trang
+    // 4. Phân trang
     const total = repos.length;
     const start = (page - 1) * limit;
     const end = start + limit;
     const pagedRepos = repos.slice(start, end);
 
-    // 4. Trả về thông tin repo cần thiết
+    // 5. Trả về thông tin repo cần thiết
     return {
       total,
       page,
@@ -1509,12 +1523,17 @@ export class ChatService extends BaseService<Message> {
     channelId: string | number,
     repoId: string | number,
   ) {
-    // 1. Kiểm tra user tồn tại
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    // 1. Kiểm tra user tồn tại và role
+    const user = await this.userRepo.findOne({ 
+      where: { id: userId },
+      select: ['id', 'role']
+    });
     if (!user)
       throw new RpcException({ msg: 'Không tìm thấy user', status: 404 });
+    
+    const isAdmin = user.role === 'admin';
 
-    // 2. Kiểm tra channel tồn tại và user là thành viên
+    // 2. Kiểm tra channel tồn tại và user là thành viên (admin bỏ qua check membership)
     const channel = await this.channelRepo.findOne({
       where: { id: channelId },
       relations: ['users', 'repositories', 'owner'],
@@ -1523,12 +1542,16 @@ export class ChatService extends BaseService<Message> {
       throw new RpcException({ msg: 'Không tìm thấy channel', status: 404 });
     if (!channel.isActive)
       throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
-    const isMember = channel.users.some((u) => String(u.id) === String(userId));
-    if (!isMember)
-      throw new RpcException({
-        msg: 'Bạn không phải thành viên của kênh này',
-        status: 403,
-      });
+    
+    // Admin không cần check membership
+    if (!isAdmin) {
+      const isMember = channel.users.some((u) => String(u.id) === String(userId));
+      if (!isMember)
+        throw new RpcException({
+          msg: 'Bạn không phải thành viên của kênh này',
+          status: 403,
+        });
+    }
 
     // 3. Kiểm tra repo tồn tại trong channel
     const repoRepo = this.attachmentRepo.manager.getRepository(RepoEntity);
@@ -1546,15 +1569,17 @@ export class ChatService extends BaseService<Message> {
       });
     }
 
-    // 4. Kiểm tra quyền xóa: user là chủ repo hoặc owner channel
-    const isRepoOwner = String(repo.user.id) === String(userId);
-    const isChannelOwner =
-      channel.owner && String(channel.owner.id) === String(userId);
-    if (!isRepoOwner && !isChannelOwner) {
-      throw new RpcException({
-        msg: 'Bạn không có quyền xóa repository này khỏi kênh',
-        status: 403,
-      });
+    // 4. Kiểm tra quyền xóa: admin có toàn quyền, user thường phải là chủ repo hoặc owner channel
+    if (!isAdmin) {
+      const isRepoOwner = String(repo.user.id) === String(userId);
+      const isChannelOwner =
+        channel.owner && String(channel.owner.id) === String(userId);
+      if (!isRepoOwner && !isChannelOwner) {
+        throw new RpcException({
+          msg: 'Bạn không có quyền xóa repository này khỏi kênh',
+          status: 403,
+        });
+      }
     }
 
     // 5. Xóa liên kết repo khỏi channel
@@ -1742,7 +1767,17 @@ export class ChatService extends BaseService<Message> {
       return { items: [], nextCursor: null, hasMore: false };
     }
 
-    // 1. Build query với joins
+    // 1. Kiểm tra role của user
+    const user = await this.userRepo.findOne({ 
+      where: { id: userId },
+      select: ['id', 'role']
+    });
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+    const isAdmin = user.role === 'admin';
+
+    // 2. Build query với joins
     const qb = this.messageRepo
       .createQueryBuilder('message')
       .leftJoinAndSelect('message.channel', 'channel')
@@ -1756,44 +1791,65 @@ export class ChatService extends BaseService<Message> {
       .addOrderBy('message.id', 'DESC')
       .take(limit + 1);
 
-    // 2. Cursor pagination
+    // 3. Cursor pagination
     if (cursor) {
       qb.andWhere('message.id < :cursor', { cursor });
     }
 
-    // 3. Filter theo channelId (nếu có)
+    // 4. Filter theo channelId (nếu có)
     if (channelId) {
-      // Kiểm tra channel tồn tại, user là member và channel active
-      const isMember = await this.channelRepo
-        .createQueryBuilder('c')
-        .innerJoin('c.users', 'u', 'u.id = :userId', { userId })
-        .where('c.id = :channelId', { channelId })
-        .andWhere('c.isActive = :isActive', { isActive: true })
-        .getExists();
+      // Admin không cần check membership, user thường phải check
+      if (!isAdmin) {
+        const isMember = await this.channelRepo
+          .createQueryBuilder('c')
+          .innerJoin('c.users', 'u', 'u.id = :userId', { userId })
+          .where('c.id = :channelId', { channelId })
+          .andWhere('c.isActive = :isActive', { isActive: true })
+          .getExists();
 
-      if (!isMember) {
-        throw new RpcException({
-          msg: 'Bạn không có quyền xem kênh này hoặc kênh không khả dụng',
-          status: 403,
-        });
+        if (!isMember) {
+          throw new RpcException({
+            msg: 'Bạn không có quyền xem kênh này hoặc kênh không khả dụng',
+            status: 403,
+          });
+        }
+      } else {
+        // Admin chỉ check channel active
+        const channelActive = await this.channelRepo
+          .createQueryBuilder('c')
+          .where('c.id = :channelId', { channelId })
+          .andWhere('c.isActive = :isActive', { isActive: true })
+          .getExists();
+
+        if (!channelActive) {
+          throw new RpcException({
+            msg: 'Kênh không tồn tại hoặc không khả dụng',
+            status: 404,
+          });
+        }
       }
       
       qb.andWhere('channel.id = :channelId', { channelId });
     } else {
-      // Nếu không có channelId, chỉ search trong channels user có quyền xem và active
-      const userChannels = await this.channelRepo
-        .createQueryBuilder('channel')
-        .leftJoin('channel.users', 'user')
-        .where('user.id = :userId', { userId })
-        .andWhere('channel.isActive = :isActive', { isActive: true })
-        .select('channel.id')
-        .getMany();
+      // Admin có thể search tất cả channels active
+      if (isAdmin) {
+        qb.andWhere('channel.isActive = :isActive', { isActive: true });
+      } else {
+        // User thường chỉ search trong channels mình là member và active
+        const userChannels = await this.channelRepo
+          .createQueryBuilder('channel')
+          .leftJoin('channel.users', 'user')
+          .where('user.id = :userId', { userId })
+          .andWhere('channel.isActive = :isActive', { isActive: true })
+          .select('channel.id')
+          .getMany();
 
-      const channelIds = userChannels.map((c) => c.id);
-      if (channelIds.length === 0) {
-        return { items: [], nextCursor: null, hasMore: false };
+        const channelIds = userChannels.map((c) => c.id);
+        if (channelIds.length === 0) {
+          return { items: [], nextCursor: null, hasMore: false };
+        }
+        qb.andWhere('channel.id IN (:...channelIds)', { channelIds });
       }
-      qb.andWhere('channel.id IN (:...channelIds)', { channelIds });
     }
 
     // 4. Filter theo senderId (nếu có)
@@ -1864,7 +1920,17 @@ export class ChatService extends BaseService<Message> {
     const take = Math.min(100, Math.max(1, limit));
     const skip = (Math.max(1, page) - 1) * take;
 
-    // 2. Build base query
+    // 2. Kiểm tra role của user
+    const user = await this.userRepo.findOne({ 
+      where: { id: userId },
+      select: ['id', 'role']
+    });
+    if (!user) {
+      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+    }
+    const isAdmin = user.role === 'admin';
+
+    // 3. Build base query
     const qb = this.messageRepo
       .createQueryBuilder('message')
       .leftJoinAndSelect('message.channel', 'channel')
@@ -1883,45 +1949,66 @@ export class ChatService extends BaseService<Message> {
         ],
       });
 
-    // 3. Filter theo channelId nếu có
+    // 4. Filter theo channelId nếu có
     if (channelId) {
-      // Kiểm tra user có quyền xem channel này không và channel phải active
-      const isMember = await this.channelRepo
-        .createQueryBuilder('c')
-        .innerJoin('c.users', 'u', 'u.id = :userId', { userId })
-        .where('c.id = :channelId', { channelId })
-        .andWhere('c.isActive = :isActive', { isActive: true })
-        .getExists();
+      // Admin không cần check membership, user thường phải check
+      if (!isAdmin) {
+        const isMember = await this.channelRepo
+          .createQueryBuilder('c')
+          .innerJoin('c.users', 'u', 'u.id = :userId', { userId })
+          .where('c.id = :channelId', { channelId })
+          .andWhere('c.isActive = :isActive', { isActive: true })
+          .getExists();
 
-      if (!isMember) {
-        throw new RpcException({
-          msg: 'Bạn không có quyền xem kênh này',
-          status: 403,
-        });
+        if (!isMember) {
+          throw new RpcException({
+            msg: 'Bạn không có quyền xem kênh này',
+            status: 403,
+          });
+        }
+      } else {
+        // Admin chỉ check channel active
+        const channelActive = await this.channelRepo
+          .createQueryBuilder('c')
+          .where('c.id = :channelId', { channelId })
+          .andWhere('c.isActive = :isActive', { isActive: true })
+          .getExists();
+
+        if (!channelActive) {
+          throw new RpcException({
+            msg: 'Kênh không tồn tại hoặc không khả dụng',
+            status: 404,
+          });
+        }
       }
 
       qb.andWhere('channel.id = :channelId', { channelId });
     } else {
-      // Nếu không có channelId, chỉ search trong channels user có quyền xem và active
-      const userChannels = await this.channelRepo
-        .createQueryBuilder('channel')
-        .innerJoin('channel.users', 'user', 'user.id = :userId', { userId })
-        .andWhere('channel.isActive = :isActive', { isActive: true })
-        .select('channel.id')
-        .getMany();
+      // Admin có thể search tất cả channels active
+      if (isAdmin) {
+        qb.andWhere('channel.isActive = :isActive', { isActive: true });
+      } else {
+        // User thường chỉ search trong channels mình là member và active
+        const userChannels = await this.channelRepo
+          .createQueryBuilder('channel')
+          .innerJoin('channel.users', 'user', 'user.id = :userId', { userId })
+          .andWhere('channel.isActive = :isActive', { isActive: true })
+          .select('channel.id')
+          .getMany();
 
-      const channelIds = userChannels.map((c) => c.id);
-      if (channelIds.length === 0) {
-        return {
-          items: [],
-          total: 0,
-          page: 1,
-          limit: take,
-          totalPages: 0,
-          hasMore: false,
-        };
+        const channelIds = userChannels.map((c) => c.id);
+        if (channelIds.length === 0) {
+          return {
+            items: [],
+            total: 0,
+            page: 1,
+            limit: take,
+            totalPages: 0,
+            hasMore: false,
+          };
+        }
+        qb.andWhere('channel.id IN (:...channelIds)', { channelIds });
       }
-      qb.andWhere('channel.id IN (:...channelIds)', { channelIds });
     }
 
     // 4. Get total count
@@ -2903,6 +2990,7 @@ export class ChatService extends BaseService<Message> {
           messageInfo,
         };
       }
+
 
       default:
         throw new RpcException({

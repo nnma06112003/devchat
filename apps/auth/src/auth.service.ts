@@ -1,6 +1,6 @@
 // Tạo refresh_token và lưu vào user
 
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UserRepository } from './repositories/user.repository';
@@ -12,6 +12,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository, Not } from 'typeorm';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as crypto from 'crypto';
+import Redis from 'ioredis';
 // import * as jose from 'jose'; // replaced with dynamic import in createAppJWT
 
 @Injectable()
@@ -24,6 +25,7 @@ export class AuthService {
     private userRepository: UserRepository,
     private jwtService: JwtService,
     private readonly mailerService: MailerService,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis, // Thêm Redis client
   ) {}
   async searchUsers(
     user: any,
@@ -463,6 +465,135 @@ export class AuthService {
 
     switch(method) { 
       
+      case 'stats': {
+        // Lấy thống kê dashboard
+        try {
+          // 1. Đếm tổng số user
+          const totalUsers = await this.userRepo.count();
+
+          // 2. Đếm số user active
+          const activeUsers = await this.userRepo.count({
+            where: { isActive: true },
+          });
+
+          // 3. Đếm số user theo role
+          const adminCount = await this.userRepo.count({
+            where: { role: 'admin' },
+          });
+
+          const userCount = await this.userRepo.count({
+            where: { role: 'user' },
+          });
+
+          // 4. Đếm số user có liên kết GitHub
+          const githubLinkedCount = await this.userRepo.count({
+            where: { github_verified: true },
+          });
+
+          // 5. Lấy số user online từ Redis
+          let onlineCount = 0;
+          try {
+            const userStatusMap = await this.redis.hgetall('user_status');
+            onlineCount = Object.values(userStatusMap).filter((statusStr) => {
+              try {
+                const status = JSON.parse(statusStr);
+                return status.online === true;
+              } catch {
+                return false;
+              }
+            }).length;
+          } catch (redisError) {
+            console.error('Error fetching online users from Redis:', redisError);
+            // Nếu Redis lỗi, trả về 0
+          }
+
+          // 6. Đếm số user mới trong 7 ngày gần đây
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          const newUsersLast7Days = await this.userRepo
+            .createQueryBuilder('user')
+            .where('user.created_at >= :date', { date: sevenDaysAgo })
+            .getCount();
+
+          // 7. Đếm số user đã verify email
+          const emailVerifiedCount = await this.userRepo.count({
+            where: { email_verified: true },
+          });
+
+          // 8. Lấy danh sách user online gần đây (top 10)
+          let recentOnlineUsers:any[] = [];
+          try {
+            const qb = this.userRepo
+              .createQueryBuilder('user')
+              .select([
+                'user.id',
+                'user.username',
+                'user.email',
+                'user.avatar',
+                'user.github_avatar',
+              ])
+              .orderBy('user.updated_at', 'DESC')
+              .limit(10);
+
+            const users = await qb.getMany();
+            
+            // Kiểm tra status online từ Redis
+            const userStatusMap = await this.redis.hgetall('user_status');
+            recentOnlineUsers = users.map((u:any) => {
+              const statusStr = userStatusMap[u.id];
+              let isOnline = false;
+              let lastSeen = null;
+
+              if (statusStr) {
+                try {
+                  const status = JSON.parse(statusStr);
+                  isOnline = status.online === true;
+                  lastSeen = status.lastSeen || null;
+                } catch {}
+              }
+
+              return {
+                id: u.id,
+                username: u.username,
+                email: u.email,
+                avatar: u.avatar ?? u.github_avatar ?? null,
+                isOnline,
+                lastSeen,
+              };
+            });
+          } catch (error) {
+            console.error('Error fetching recent online users:', error);
+          }
+
+          return {
+            overview: {
+              totalUsers,
+              activeUsers,
+              inactiveUsers: totalUsers - activeUsers,
+              onlineUsers: onlineCount,
+            },
+            usersByRole: {
+              admin: adminCount,
+              user: userCount,
+            },
+            integrations: {
+              githubLinked: githubLinkedCount,
+              emailVerified: emailVerifiedCount,
+            },
+            growth: {
+              newUsersLast7Days,
+            },
+            recentOnlineUsers,
+          };
+        } catch (error) {
+          console.error('Error fetching user stats:', error);
+          throw new RpcException({
+            msg: 'Không thể lấy thống kê người dùng',
+            status: 500,
+          });
+        }
+      }
+      
       case 'create':
         // Tạo user mới
         const existingUser = await this.userRepository.findByEmail(
@@ -506,20 +637,25 @@ export class AuthService {
         // data.keySearch?: string
         // data.limit?: number
         // data.page?: number
-        // data.order?: 'newest' | 'oldest'    (mới nhất = newest -> created_at DESC)
-        // data.isActive?: boolean | null     (true/false/null = all)
+        // data.order?: 'newest' | 'oldest'
+        // data.role?: 'admin' | 'user' | '' (empty = all)
+        // data.isActive?: 'true' | 'false' | '' (empty = all)
         const keySearch = (data?.keySearch || '').toString().trim().toLowerCase();
         const limit = Math.max(1, Math.min(200, Number(data?.limit ?? 20)));
         const page = Math.max(1, Number(data?.page ?? 1));
         const order = data?.order === 'oldest' ? 'ASC' : 'DESC';
-        const isActiveFilter =
-          data && Object.prototype.hasOwnProperty.call(data, 'isActive')
-            ? data.isActive
-            : undefined; // undefined => không filter
+        
+        // Xử lý filter role
+        const roleFilter = data?.role && data.role !== '' ? data.role : undefined;
+        
+        // Xử lý filter isActive - chuyển string thành boolean
+        let isActiveFilter: boolean | undefined = undefined;
+        if (data?.isActive !== undefined && data.isActive !== '') {
+          isActiveFilter = data.isActive === 'true' || data.isActive === true;
+        }
 
         const qb = this.userRepo.createQueryBuilder('user');
 
-        // Chọn rõ ràng các trường không nhạy cảm (loại bỏ password, refresh_token, verification_token,...)
         qb.select([
           'user.id',
           'user.username',
@@ -542,12 +678,18 @@ export class AuthService {
           );
         }
 
+        // Filter theo role
+        if (roleFilter) {
+          qb.andWhere('user.role = :role', { role: roleFilter });
+        }
+
+        // Filter theo isActive
         if (typeof isActiveFilter === 'boolean') {
           qb.andWhere('user.isActive = :isActive', { isActive: isActiveFilter });
         }
 
         qb.orderBy('user.created_at', order as 'ASC' | 'DESC');
-        qb.addOrderBy('user.id', order as 'ASC' | 'DESC'); // Thêm order by id để đảm bảo thứ tự nhất quán
+        qb.addOrderBy('user.id', order as 'ASC' | 'DESC');
         qb.skip((page - 1) * limit).take(limit);
 
         const [items, total] = await qb.getManyAndCount();
@@ -612,7 +754,7 @@ export class AuthService {
         }
 
         try {
-          // Sử dụng QueryBuilder với TypeORM entities
+          // Sử dụng QueryRunner với TypeORM entities
           const queryRunner = this.userRepo.manager.connection.createQueryRunner();
           
           await queryRunner.connect();
@@ -726,6 +868,7 @@ export class AuthService {
           role: targetUser.role,
         };
       }
+        
       default:
         break;
     }
