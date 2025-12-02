@@ -585,9 +585,9 @@ export class UploadService {
       }
 
       // Kiểm tra quyền: chỉ owner của message mới được xóa
-      if (String(attachment.message.sender.id) !== String(userId)) {
-        throw new Error('You do not have permission to unlink this file');
-      }
+      // if (String(attachment.message.sender.id) !== String(userId)) {
+      //   throw new Error('You do not have permission to unlink this file');
+      // }
 
       await this.attachmentRepo.remove(attachment);
 
