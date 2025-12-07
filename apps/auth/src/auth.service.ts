@@ -185,10 +185,14 @@ export class AuthService {
       access_token,
       refresh_token,
       };
-    } catch (error) {
-       throw new RpcException({
-        msg: 'Tài khoản không đúng',
-        status: 401,
+    } catch (error: any) {
+      if (error instanceof RpcException) {
+        throw error;
+      }
+
+      throw new RpcException({
+        msg: error?.message || 'Đã xảy ra lỗi trong quá trình đăng nhập',
+        status: 500,
       });
     }
   }
