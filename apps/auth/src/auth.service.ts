@@ -617,6 +617,16 @@ export class AuthService {
           throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
         }
         
+        // Đếm số repository của user (nếu có github_installation_id)
+        let totalRepositories = 0;
+        if (userToRead.github_installation_id) {
+          const repoRepo = this.userRepo.manager.getRepository('repositories');
+          totalRepositories = await repoRepo
+            .createQueryBuilder('repo')
+            .where('repo.userId = :userId', { userId: userToRead.id })
+            .getCount();
+        }
+        
         return {
           id: userToRead.id,
           username: userToRead.username ?? null,
@@ -627,6 +637,9 @@ export class AuthService {
           email_verified: !!userToRead.email_verified,
           github_verified: !!userToRead.github_verified,
           github_installation_id: userToRead.github_installation_id ?? null,
+          github_user_id: userToRead.github_user_id ?? null,
+          github_email: userToRead.github_email ?? null,
+          totalRepositories,
           isActive: userToRead.isActive,
           created_at: userToRead.created_at,
           updated_at: userToRead.updated_at,

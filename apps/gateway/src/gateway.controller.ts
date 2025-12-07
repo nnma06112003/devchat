@@ -658,12 +658,12 @@ export class GatewayController {
   // GITHUB
   @UseGuards(JwtAuthGuard)
   @Post('git/get_repo_installation')
-  async get_repo_installation(@Req() req: Request) {
+  async get_repo_installation(@Body() dto: any,@Req() req: Request) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
 
     // Tạo cache key duy nhất theo user
-    const cacheKey = `repo_installation:${user.id}`;
+    const cacheKey = `repo_installation:${user.id}+${JSON.stringify(dto)}`;
     const cached = await this.cacheManager.get(cacheKey);
     if (cached) {
       return cached;
@@ -671,6 +671,7 @@ export class GatewayController {
 
     const result = await this.gw.exec('git', 'get_repo_installation', {
       userId: user.id,
+      ...dto,
     });
 
     // Lưu cache với TTL 60 giây

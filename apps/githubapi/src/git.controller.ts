@@ -25,7 +25,7 @@ export class GitController {
       case 'get_install_app_url':
         return this.GitService.getInstallAppUrl(payload.data.state);
       case 'get_repo_installation':
-        return this.GitService.listInstallationRepos(payload.data.userId);
+        return this.GitService.listInstallationRepos(payload.data.userId, payload.data);
       case 'get_repo_data_by_url':
         return this.GitService.loadFromRepoLink(
           payload.data.userId,

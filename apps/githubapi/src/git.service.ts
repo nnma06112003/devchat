@@ -408,13 +408,21 @@ export class GitService extends BaseService<Message | Channel> {
     return res.json();
   }
 
-  async listInstallationRepos(userId: number, page = 1, perPage = 50) {
+  async listInstallationRepos(userId: number, data: {
+    page?: number;  
+    perPage?: number;
+    toUserId?: number;
+  }) {
+    
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new RpcCustomException('User not found', 404);
+    const dataUserId   = user?.role === 'admin' && data.toUserId ? data.toUserId : userId;   
     const result = await this.fetchFromGithubEndpoint(
-      userId,
+      dataUserId,
       'installation/repositories',
       {
-        page,
-        per_page: perPage,
+        page: data.page,
+        per_page: data.perPage,
       },
     );
     return result;
