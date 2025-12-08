@@ -23,8 +23,9 @@ export class JwtAuthGuard implements CanActivate {
     if (!token) throw new UnauthorizedException('No token provided');
     const data: any = await this.gw.exec('auth', 'verify_token', { token });
 
-    if (!data?.data) return false;
-    req.user = data?.data;
+    const dataDecript = this.gw.decryptIdsInData(data);
+    if (!dataDecript?.data) return false;
+    req.user = dataDecript?.data;
     return true;
   }
 }

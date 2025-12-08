@@ -20,6 +20,7 @@ import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { KafkaService } from './kafka/kafka.service';
+import { log } from 'console';
 
 type StatePayload = { next: string; userId: string | number };
 
@@ -377,6 +378,8 @@ export class GatewayController {
     // Đính kèm user từ JWT để ChatService kiểm soát quyền truy cập kênh
     const user = req.user as any;
     const payload = { user, ...dto };
+    console.log('Join Channel Payload:', payload);
+    
     return this.gw.exec('chat', 'joinChannel', payload);
   }
   // ---------- CHAT ----------

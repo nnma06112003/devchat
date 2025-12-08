@@ -73,113 +73,112 @@ export class ChatService extends BaseService<Message> {
 
 
   async joinChannel(user: any, data: { id: string; type: string }) {
-    if (!user || !user.id) {
-      throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
-    }
-    if (!data?.id || !data?.type) {
-      throw new RpcException({
-        msg: 'Thiếu thông tin kênh hoặc loại kênh',
-        status: 400,
-      });
-    }
-    if (data.type === 'group') {
-      // Tìm kênh group
-      const channel = await this.channelRepo.findOne({
-        where: { id: data.id, type: 'group' },
-        relations: ['users'],
-      });
-      if (!channel) {
-        throw new RpcException({
-          msg: 'Không tìm thấy kênh công khai',
-          status: 404,
-        });
-      }
-      if (!channel.isActive) {
-        throw new RpcException({
-          msg: 'Kênh đã bị vô hiệu hóa',
-          status: 403,
-        });
-      }
-      // Kiểm tra user đã là thành viên chưa
-      const isMember = channel.users.some(
-        (u) => String(u.id) === String(user.id),
-      );
-      if (isMember) {
-        return {
-          msg: 'Bạn đang là thành viên của kênh này',
-          channel: data,
-        };
-      }
-      // Thêm user vào kênh
-      channel.users.push(user);
-      channel.member_count = channel.users.length;
-      await this.channelRepo.save(channel);
-      return {
-        msg: 'Tham gia kênh thành công',
-        channel: channel,
-      };
-    } else if (data.type === 'personal') {
-      // Tìm user còn lại
-      const otherUser = await this.userRepo.findOne({ where: { id: data.id } });
-      if (!otherUser) {
-        throw new RpcException({
-          msg: 'Không tìm thấy người dùng còn lại',
-          status: 404,
-        });
-      }
-      // Kiểm tra đã có kênh personal giữa 2 user chưa
-      const existChannel = await this.channelRepo
-        .createQueryBuilder('channel')
-        .leftJoinAndSelect('channel.users', 'member')
-        .where('channel.type = :type', { type: 'personal' })
-        .andWhere('member.id IN (:...ids)', { ids: [user.id, otherUser.id] })
-        .getMany();
-      // Lọc kênh có đúng 2 thành viên là 2 user này
-      const found = existChannel.find(
-        (c) =>
-          c.users.length === 2 &&
-          c.users.some((u) => String(u.id) === String(user.id)) &&
-          c.users.some((u) => String(u.id) === String(otherUser.id)),
-      );
+  console.log('log join to channel', { user, data });
 
-      if (found) {
-        // Kiểm tra xem giữa 2 người này có tin nhắn chưa
-        const messageCount = await this.messageRepo.count({
-          where: { channel: { id: found.id } },
-        });
-
-        if (messageCount > 0) {
-          return {
-            msg: 'Bạn đã nhắn tin với người này',
-            channel: found,
-            hasMessages: true,
-            messageCount,
-          };
-        } else {
-          return {
-            msg: 'Bạn có kênh với người này nhưng chưa có tin nhắn nào',
-            channel: found,
-            hasMessages: false,
-            messageCount: 0,
-          };
-        }
-      }
-      // Tạo kênh mới
-      const channel = this.channelRepo.create({
-        name: 'Personal Chat',
-        type: 'personal',
-        users: [user, otherUser],
-        member_count: 2,
-      });
-      const saved = await this.channelRepo.save(channel);
-      return {
-        msg: 'Hai bạn có thể nhắn tin với nhau',
-        channel: saved,
-      };
-    } else {
-      throw new RpcException({ msg: 'Kênh không hợp lệ', status: 400 });
-    }
+  if (!user?.id) {
+    throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 401 });
   }
+  if (!data?.id || !data?.type) {
+    throw new RpcException({ msg: 'Thiếu thông tin kênh hoặc loại kênh', status: 400 });
+  }
+
+  /** --------------------------------------------------------
+   *  XỬ LÝ KÊNH GROUP
+   * -------------------------------------------------------- */
+  if (data.type === 'group') {
+    const channel = await this.channelRepo.findOne({
+      where: { id: data.id, type: 'group' },
+      relations: ['users'],
+    });
+
+    if (!channel) {
+      throw new RpcException({ msg: 'Không tìm thấy kênh công khai', status: 404 });
+    }
+    if (!channel.isActive) {
+      throw new RpcException({ msg: 'Kênh đã bị vô hiệu hóa', status: 403 });
+    }
+
+    const isMember = channel.users.some((u) => String(u.id) === String(user.id));
+    if (isMember) {
+      return { msg: 'Bạn đang là thành viên của kênh này', channel };
+    }
+
+    channel.users.push(user);
+    channel.member_count = channel.users.length;
+    await this.channelRepo.save(channel);
+
+    return { msg: 'Tham gia kênh thành công', channel };
+  }
+
+  /** --------------------------------------------------------
+   *  XỬ LÝ KÊNH PERSONAL (chat 1-1)
+   * -------------------------------------------------------- */
+ else if (data.type === 'personal') {
+  const userId = String(user.id);
+  const otherId = String(data.id);
+
+  console.log("log join to personal channel", { userId, otherId });
+
+  if (userId === otherId) {
+    throw new RpcException({ msg: 'Không thể nhắn tin với chính mình', status: 400 });
+  }
+
+  // 1. Lấy tất cả kênh personal mà user đã tham gia
+  const userPersonalChannels = await this.channelRepo.find({
+    where: { type: 'personal', users: { id: user.id } },
+    relations: ['users'],
+  });
+
+  // 2. Lọc ra kênh chung
+  const foundChannel = userPersonalChannels.find(
+    (c) =>
+      c.users.length === 2 &&
+      c.users.some((u) => String(u.id) === userId) &&
+      c.users.some((u) => String(u.id) === otherId),
+  );
+
+  if (foundChannel) {
+    const messageCount = await this.messageRepo.count({
+      where: { channel: { id: foundChannel.id } },
+    });
+    return {
+      msg: messageCount > 0 ? 'Bạn đã nhắn tin với người này' : 'Chưa có tin nhắn nào',
+      channel: foundChannel,
+      hasMessages: messageCount > 0,
+      messageCount,
+    };
+  }
+
+  // 3. Lấy user từ DB để tránh lỗi duplicate constraint
+  const currentUser:any = await this.userRepo.findOne({ where: { id: user.id } });
+  const otherUser = await this.userRepo.findOne({ where: { id: data.id } });
+
+  if (!otherUser) {
+    throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
+  }
+
+  // 4. Tạo kênh mới giữa 2 user
+  const newChannel = this.channelRepo.create({
+    name: 'Personal Chat',
+    type: 'personal',
+    users: [currentUser, otherUser],     // <-- FIX HERE
+    member_count: 2,
+  });
+
+  const saved = await this.channelRepo.save(newChannel);
+
+  return {
+    msg: 'Hai bạn có thể nhắn tin với nhau',
+    channel: saved,
+    hasMessages: false,
+    messageCount: 0,
+  };
+}
+
+
+  throw new RpcException({ msg: 'Kênh không hợp lệ', status: 400 });
+}
+
   async createChannel(
     user: any,
     params: {
@@ -659,9 +658,11 @@ export class ChatService extends BaseService<Message> {
             if (jsonData.userRoles && Array.isArray(jsonData.userRoles)) {
               // Validate mỗi userRole
               for (const userRole of jsonData.userRoles) {
-                if (!userRole.userId || !Array.isArray(userRole.roles)) {
+                // userId có thể null, nhưng roles phải là array
+                if (!Array.isArray(userRole.roles)) {
                   throw new RpcException({
-                    msg: 'Cấu trúc json_data không hợp lệ: thiếu userId hoặc roles',
+                    msg: 'Cấu trúc json_data không hợp lệ: roles phải là mảng',
+                    json_data: jsonData,
                     status: 400,
                   });
                 }
@@ -802,6 +803,14 @@ export class ChatService extends BaseService<Message> {
     },
     noAuth = false,
   ) {
+
+    console.log('fetch History Dtaat',{
+      user,
+      channelId,
+      options,
+      noAuth
+    });
+    
     // Nếu noAuth = true, chỉ trả về thông tin kênh
     if (noAuth) {
       const channel: any = await this.channelRepo

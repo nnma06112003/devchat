@@ -32,12 +32,14 @@ export class AuthenticatedSocketIoAdapter extends IoAdapter {
         }
 
         const data: any = await this.gatewayService.exec('auth', 'verify_token', { token });
+        const dataDecript = this.gatewayService.decryptIdsInData(data);
 
-        if (!data?.data) {
+        if (!dataDecript?.data) {
           return next(new UnauthorizedException('Invalid token'));
         }
 
-        socket.user = { id: data.data.sub || data.data.id }; // gán user từ token
+        // data.data.id đã là ID gốc (auth service đã decrypt)
+        socket.user = { id: dataDecript.data.id }; // gán user từ token
         next();
       } catch (err) {
         next(err);

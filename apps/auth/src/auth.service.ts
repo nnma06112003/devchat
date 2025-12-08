@@ -17,7 +17,8 @@ import Redis from 'ioredis';
 
 @Injectable()
 export class AuthService {
-  // Tìm kiếm user theo username hoặc email
+  private readonly algorithm = 'aes-256-cbc';
+  private encryptionKey: Buffer;
 
   constructor(
     @InjectRepository(User)
@@ -25,8 +26,66 @@ export class AuthService {
     private userRepository: UserRepository,
     private jwtService: JwtService,
     private readonly mailerService: MailerService,
-    @Inject('REDIS_CLIENT') private readonly redis: Redis, // Thêm Redis client
-  ) {}
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+  ) {
+    // Khởi tạo encryption key (giống gateway)
+    const key = process.env.ID_ENCRYPTION_KEY || 'default-secret-key-32-chars-min';
+    this.encryptionKey = crypto.scryptSync(key, 'salt', 32);
+  }
+
+  /**
+   * Mã hóa ID (giống gateway service)
+   */
+  private encryptId(id: string | number): string {
+    try {
+      const text = String(id);
+      const iv = crypto
+        .createHash('md5')
+        .update(text + process.env.ID_ENCRYPTION_KEY)
+        .digest();
+      
+      const cipher = crypto.createCipheriv(this.algorithm, this.encryptionKey, iv);
+      let encrypted = cipher.update(text, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      
+      const combined = iv.toString('hex') + ':' + encrypted;
+      return 'ENC:' + Buffer.from(combined).toString('base64');
+    } catch (err) {
+      console.error('❌ Encrypt ID error:', err);
+      return String(id);
+    }
+  }
+
+  /**
+   * Giải mã ID (giống gateway service)
+   */
+  private decryptId(encryptedId: string): string {
+    try {
+      if (!encryptedId || !encryptedId.startsWith('ENC:')) {
+        return encryptedId;
+      }
+
+      const base64Data = encryptedId.substring(4);
+      const combined = Buffer.from(base64Data, 'base64').toString('utf8');
+      const parts = combined.split(':');
+      
+      if (parts.length !== 2) {
+        throw new Error('Invalid encrypted format');
+      }
+
+      const iv = Buffer.from(parts[0], 'hex');
+      const encrypted = parts[1];
+      
+      const decipher = crypto.createDecipheriv(this.algorithm, this.encryptionKey, iv);
+      let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      
+      return decrypted;
+    } catch (err) {
+      console.error('❌ Decrypt ID error:', err);
+      throw new RpcException({ status: 400, msg: 'ID không hợp lệ hoặc đã bị thay đổi' });
+    }
+  }
   async searchUsers(
     user: any,
     params: { key: string; limit?: number },
@@ -79,8 +138,9 @@ export class AuthService {
     //send verification email
     this.sendVerificationEmail(user.email);
 
+    // Mã hóa sub trước khi tạo JWT
     const payload: any = {
-      sub: user.id,
+      sub: this.encryptId(user.id),
       email: user.email,
       username: user.username,
       role: user.role,
@@ -171,7 +231,7 @@ export class AuthService {
     }
 
     const payload: JwtPayload = {
-      sub: user.id,
+      sub: this.encryptId(user.id),
       email: user.email,
       username: user.username,
       role: user.role,
@@ -200,7 +260,10 @@ export class AuthService {
   async validateToken(token: string): Promise<any> {
     try {
       const payload = this.jwtService.verify(token);
-      const user: any = await this.userRepository.findById(payload.sub);
+      
+      // Giải mã sub từ JWT payload
+      const userId = this.decryptId(payload.sub);
+      const user: any = await this.userRepository.findById(userId);
 
       if (!user) {
         throw new RpcException({
@@ -257,7 +320,7 @@ export class AuthService {
   }
   private async generateAndSaverefresh_token(user: any): Promise<string> {
     const refresh_token = this.jwtService.sign(
-      { sub: user.id },
+      { sub: this.encryptId(user.id) },
       {
         expiresIn: '7d',
         secret:
@@ -277,8 +340,12 @@ export class AuthService {
         process.env.REFRESH_SECRET_KEY ||
         'nguyenthaibinhduongdevchatapprefresh',
     });
-    const user: any = await this.userRepository.findById(payload.sub);
-    console.log('user id:', payload.sub);
+    
+    // Giải mã sub từ JWT payload
+    const userId = this.decryptId(payload.sub);
+    const user: any = await this.userRepository.findById(userId);
+    console.log('encrypted user id:', payload.sub);
+    console.log('decrypted user id:', userId);
     console.log('user:', user);
 
     if (!user || user.refresh_token !== refresh_token) {
@@ -296,8 +363,9 @@ export class AuthService {
     }
 
     // 2. Tạo access_token mới
+    // Mã hóa sub trước khi tạo JWT
     const payloadData: JwtPayload = {
-      sub: user.id,
+      sub: this.encryptId(user.id),
       email: user.email,
       username: user.username,
       role: user.role,
@@ -369,8 +437,9 @@ export class AuthService {
     // if (user.refresh_token) {
     //   return null;
     // }
+    // Mã hóa sub trước khi tạo JWT
     const payload: JwtPayload = {
-      sub: user.id,
+      sub: this.encryptId(user.id),
       email: user.email,
       username: user.username,
       role: user.role,

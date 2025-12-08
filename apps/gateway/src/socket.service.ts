@@ -391,8 +391,8 @@ export class ChatSocketService {
     }
 
     // Nếu channel chưa active → bật active & gửi cập nhật channel cho members đang online
-    if (message.channelData && message.channelData.isActive === false) {
-      const activeChannel = { ...message.channelData, isActive: true };
+    if (message.channelData && message.channelData.isChannelActive === false) {
+      const activeChannel = { ...message.channelData, isChannelActive: true };
       for (const member of message.channelData.members || []) {
         const uid = member.id;
         const statusStr = await this.redis.hget('user_status', uid);
