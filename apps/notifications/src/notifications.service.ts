@@ -55,6 +55,8 @@ export class NotificationService {
     const channelId = data?.channel?.id;
     const senderId = data?.sender?.id;
 
+    console.log(`Creating message notification for channel ${channelId} excluding sender ${senderId}`, data);      
+
     const members = (await this.getChannelMembers(channelId))
       .filter((m) => m.id !== String(senderId))
       .map((m) => m.id);

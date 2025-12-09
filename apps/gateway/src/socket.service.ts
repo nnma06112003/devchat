@@ -9,6 +9,20 @@ import { channel } from 'diagnostics_channel';
 
 export type AuthSocket = Socket & { user?: { id: string } };
 
+interface UserStatus {
+  online: boolean;
+  socketId?: string;
+  lastSeen?: number;
+}
+
+interface UserStatusCheckResult {
+  userId: string;
+  plainUserId: string;
+  status: UserStatus | null;
+  isOnline: boolean;
+  socketId: string | null;
+}
+
 @Injectable()
 export class ChatSocketService {
   private server: Server;
@@ -20,6 +34,150 @@ export class ChatSocketService {
 
   setServer(server: Server) {
     this.server = server;
+  }
+
+  /* ===================== USER STATUS HELPERS ===================== */
+  
+  /**
+   * Helper chung để check user status từ Redis và log chi tiết
+   * @param userId - User ID (có thể encrypted hoặc plain)
+   * @param context - Context để log (VD: "THÔNG BÁO TIN NHẮN", "CẬP NHẬT KÊNH")
+   * @returns UserStatusCheckResult với thông tin chi tiết
+   */
+  private async checkUserStatus(userId: string, context: string = 'GENERAL'): Promise<UserStatusCheckResult> {
+    // Decrypt userId nếu cần
+    const plainUserId = userId?.startsWith('ENC:') ? this.gw.decryptId(userId) : userId;
+    
+    console.log(`🔍 [${context}] Kiểm tra trạng thái user:`, {
+      userIdGoc: userId,
+      userIdGiaiMa: plainUserId,
+      daGiaiMa: userId?.startsWith('ENC:')
+    });
+
+    const statusStr = await this.redis.hget('user_status', plainUserId);
+    
+    if (!statusStr) {
+      console.log(`📵 [${context}] User ${plainUserId} không tìm thấy trong Redis`);
+      return {
+        userId,
+        plainUserId,
+        status: null,
+        isOnline: false,
+        socketId: null
+      };
+    }
+
+    const status: UserStatus = JSON.parse(statusStr);
+    const isOnline = status.online && !!status.socketId;
+    
+    console.log(`👤 [${context}] Trạng thái user ${plainUserId}:`, {
+      dangOnline: status.online,
+      coSocketId: !!status.socketId,
+      socketId: status.socketId || 'không có',
+      lanCuoiOnline: status.lastSeen ? new Date(status.lastSeen).toISOString() : 'không rõ'
+    });
+
+    return {
+      userId,
+      plainUserId,
+      status,
+      isOnline,
+      socketId: status.socketId || null
+    };
+  }
+
+  /**
+   * Emit socket event đến user với logging chi tiết
+   * @param userId - User ID (có thể encrypted hoặc plain)
+   * @param event - Socket event name
+   * @param payload - Data payload
+   * @param context - Context để log
+   * @returns true nếu gửi thành công, false nếu user offline
+   */
+  private async emitToUserWithLog(
+    userId: string, 
+    event: string, 
+    payload: any, 
+    context: string = 'SOCKET'
+  ): Promise<boolean> {
+    const userCheck = await this.checkUserStatus(userId, context);
+
+    if (!userCheck.isOnline) {
+      console.log(`❌ [${context}] Không thể gửi '${event}' đến user ${userCheck.plainUserId}: User offline`);
+      return false;
+    }
+
+    if (!this.server) {
+      console.log(`❌ [${context}] Không thể gửi '${event}' đến user ${userCheck.plainUserId}: Server không khả dụng`);
+      return false;
+    }
+
+    this.server.to(userCheck.socketId!).emit(event, payload);
+    console.log(`✅ [${context}] Đã gửi '${event}' đến user ${userCheck.plainUserId}:`, {
+      socketId: userCheck.socketId,
+      eventName: event,
+      payloadKeys: Object.keys(payload || {})
+    });
+
+    return true;
+  }
+
+  /**
+   * Gửi notification đến nhiều users với logging chi tiết
+   * @param notifications - Danh sách notifications
+   * @param context - Context để log
+   */
+  private async sendNotificationsToUsers(
+    notifications: any[], 
+    context: string = 'NOTIFICATION'
+  ): Promise<void> {
+    if (!notifications || notifications.length === 0) {
+      console.log(`⚠️ [${context}] Không có notification nào để gửi`);
+      return;
+    }
+
+    console.log(`📬 [${context}] Bắt đầu gửi ${notifications.length} notifications`);
+    
+    let successCount = 0;
+    let offlineCount = 0;
+    let errorCount = 0;
+
+    for (const notify of notifications) {
+      try {
+        const userCheck = await this.checkUserStatus(notify.userId, context);
+        
+        if (!userCheck.isOnline) {
+          offlineCount++;
+          continue;
+        }
+
+        const sent = await this.emitToUserWithLog(
+          notify.userId,
+          'receiveNotification',
+          {
+            ...notify,
+            fakeID: Date.now(),
+          },
+          context
+        );
+
+        if (sent) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch (err: any) {
+        console.error(`❌ [${context}] Lỗi khi gửi notification đến user ${notify.userId}:`, err?.message || err);
+        errorCount++;
+      }
+    }
+
+    console.log(`📊 [${context}] Tổng kết gửi notifications:`, {
+      tongSo: notifications.length,
+      thanhCong: successCount,
+      offline: offlineCount,
+      loi: errorCount
+    });
   }
 
   /* ===================== UNREAD HELPERS ===================== */
@@ -103,13 +261,6 @@ export class ChatSocketService {
 
   /* ===================== ROOM OPS ===================== */
   async joinChannel(client: AuthSocket, channelId: string) {
-    // Nếu client đã ở trong room này thì không emit nữa
-    // if (client.rooms.has(channelId)) {
-    //   console.log(
-    //     `⚠️ User ${client.user?.id} đã ở trong channel ${channelId}, không emit joinedRoom`,
-    //   );
-    //   return;
-    // }
     client.join(channelId);
     await this.resetUnread(client, channelId);
     client.emit('joinedRoom', { channelId });
@@ -151,42 +302,33 @@ export class ChatSocketService {
       updated_at: now,
     };
 
+    console.log(`📢 [TẠO KÊNH] Chuẩn bị gửi pending channel đến ${data.userIds.length} users`);
+
     if (data?.type !== 'personal') {
+      let sentCount = 0;
       for (const uid of data.userIds) {
-        const statusStr = await this.redis.hget('user_status', uid);
-        if (!statusStr) continue;
-        const status = JSON.parse(statusStr);
-        if (status.online && status.socketId) {
-          this.server.to(status.socketId).emit('receiveChannel', channel);
-          console.log(
-            `📢 Sent channel to user ${uid} at socket ${status.socketId}`,
-          );
-        }
+        const sent = await this.emitToUserWithLog(uid, 'receiveChannel', channel, 'TẠO KÊNH - PENDING');
+        if (sent) sentCount++;
       }
+      console.log(`📊 [TẠO KÊNH] Đã gửi pending channel đến ${sentCount}/${data.userIds.length} users online`);
     }
 
     try {
-      const savedChannel: any = await this.gw.exec(
-        'chat',
-        'createChannel',
-        data,
-      );
+      const savedChannel: any = await this.gw.exec('chat', 'createChannel', data);
+      
       if (savedChannel?.data) {
         const msg: any = { ...savedChannel.data, fakeID: channel.fakeID };
+        console.log(`📢 [TẠO KÊNH] Chuẩn bị gửi saved channel đến ${data.userIds.length} users`);
+        
+        let sentCount = 0;
         for (const uid of data.userIds) {
-          const statusStr = await this.redis.hget('user_status', uid);
-          if (!statusStr) continue;
-          const status = JSON.parse(statusStr);
-          if (status.online && status.socketId) {
-            this.server.to(status.socketId).emit('receiveChannel', msg);
-            console.log(
-              `📢 Sent channel to user ${uid} at socket ${status.socketId} with ${JSON.stringify(msg)}`,
-            );
-          }
+          const sent = await this.emitToUserWithLog(uid, 'receiveChannel', msg, 'TẠO KÊNH - SAVED');
+          if (sent) sentCount++;
         }
+        console.log(`📊 [TẠO KÊNH] Đã gửi saved channel đến ${sentCount}/${data.userIds.length} users online`);
       }
     } catch (err) {
-      console.error(`❌ Error creating channel: ${err}`);
+      console.error(`❌ [TẠO KÊNH] Lỗi:`, err);
     }
   }
 
@@ -198,10 +340,10 @@ export class ChatSocketService {
     user: any;
     q?: any;
   }) {
-    console.log(`🔄 [updateChannel] Starting update for channel ${data.channelId}`, {
-      currentUsers: data.currenetUserIds.length,
-      addUsers: data.addUserIds.length,
-      removeUsers: data.removeUserIds.length,
+    console.log(`🔄 [CẬP NHẬT KÊNH] Bắt đầu cập nhật kênh ${data.channelId}`, {
+      thanhVienHienTai: data.currenetUserIds.length,
+      thanhVienThem: data.addUserIds.length,
+      thanhVienXoa: data.removeUserIds.length,
     });
 
     try {
@@ -214,7 +356,7 @@ export class ChatSocketService {
       });
 
       if (!channelResponse?.data) {
-        console.error(`❌ [updateChannel] No channel data for ${data.channelId}`);
+        console.error(`❌ [CẬP NHẬT KÊNH] Không tìm thấy dữ liệu kênh ${data.channelId}`);
         return;
       }
 
@@ -222,65 +364,39 @@ export class ChatSocketService {
       const datachannel = channelInfo?.channel || {};
       const channelName = datachannel?.name || 'kênh';
 
-      console.log(`✅ [updateChannel] Channel data fetched: ${channelName}`);
-
-      // Helper: Gửi socket event
-      const emitToUser = async (uid: string, event: string, payload: any) => {
-        const statusStr = await this.redis.hget('user_status', uid);
-        if (!statusStr) return false;
-
-        const status = JSON.parse(statusStr);
-        if (status.online && status.socketId) {
-          this.server.to(status.socketId).emit(event, payload);
-          return true;
-        }
-        return false;
-      };
-
-      // Helper: Gửi notifications
-      const sendNotifications = async (memberIds: string[], text: string, action: string) => {
-        if (memberIds.length === 0) return;
-
-        const result = await this.gw.exec('notification', 'send_notification', {
-          memberIds,
-          text,
-          type: 'system',
-          additionalData: { channelId: data.channelId, channelName, action },
-        });
-
-        if (result?.data?.notifications) {
-          const sentCount = await Promise.all(
-            result.data.notifications.map((notify: any) =>
-              emitToUser(notify.userId, 'receiveNotification', {
-                ...notify,
-                fakeID: Date.now(),
-              })
-            )
-          );
-          console.log(`📢 [updateChannel] Sent ${sentCount.filter(Boolean).length} notifications for action: ${action}`);
-        }
-      };
+      console.log(`✅ [CẬP NHẬT KÊNH] Đã lấy thông tin kênh: ${channelName}`);
 
       // 2. Xử lý current members (update)
       if (data.currenetUserIds.length > 0) {
-        console.log(`📤 [updateChannel] Updating ${data.currenetUserIds.length} current members`);
+        console.log(`📤 [CẬP NHẬT KÊNH] Đang cập nhật cho ${data.currenetUserIds.length} thành viên hiện tại`);
         
-        const sentCount = await Promise.all(
-          data.currenetUserIds.map(uid => emitToUser(uid, 'receiveUpdateChannel', channelInfo))
-        );
+        let sentCount = 0;
+        for (const uid of data.currenetUserIds) {
+          const sent = await this.emitToUserWithLog(uid, 'receiveUpdateChannel', channelInfo, 'CẬP NHẬT KÊNH');
+          if (sent) sentCount++;
+        }
         
-        console.log(`✅ [updateChannel] Sent update to ${sentCount.filter(Boolean).length} online members`);
+        console.log(`📊 [CẬP NHẬT KÊNH] Đã gửi cập nhật đến ${sentCount}/${data.currenetUserIds.length} thành viên online`);
         
-        await sendNotifications(
-          data.currenetUserIds,
-          `Kênh "${channelName}" có cập nhật mới`,
-          'update'
-        );
+        // Gửi system notifications
+        const result = await this.gw.exec('notification', 'send_notification', {
+          data: {
+            memberIds: data.currenetUserIds,
+            text: `Kênh "${channelName}" có cập nhật mới`,
+            type: 'system',
+            additionalData: { channelId: data.channelId, channelName, action: 'cập nhật' },
+          },
+          type: 'system',
+        });
+
+        if (result?.data?.notifications) {
+          await this.sendNotificationsToUsers(result.data.notifications, 'CẬP NHẬT KÊNH');
+        }
       }
 
       // 3. Xử lý add members
       if (data.addUserIds.length > 0) {
-        console.log(`➕ [updateChannel] Adding ${data.addUserIds.length} new members`);
+        console.log(`➕ [CẬP NHẬT KÊNH] Đang thêm ${data.addUserIds.length} thành viên mới`);
 
         const newChannelPayload: any = {
           id: datachannel.id,
@@ -295,16 +411,18 @@ export class ChatSocketService {
           ...datachannel,
         };
 
-        const sentCount = await Promise.all(
-          data.addUserIds.map(uid => emitToUser(uid, 'receiveChannel', newChannelPayload))
-        );
+        let sentCount = 0;
+        for (const uid of data.addUserIds) {
+          const sent = await this.emitToUserWithLog(uid, 'receiveChannel', newChannelPayload, 'THÊM THÀNH VIÊN');
+          if (sent) sentCount++;
+        }
 
-        console.log(`✅ [updateChannel] Sent channel to ${sentCount.filter(Boolean).length} new members`);
+        console.log(`📊 [CẬP NHẬT KÊNH] Đã gửi thông tin kênh đến ${sentCount}/${data.addUserIds.length} thành viên mới`);
       }
 
       // 4. Xử lý remove members
       if (data.removeUserIds.length > 0) {
-        console.log(`➖ [updateChannel] Removing ${data.removeUserIds.length} members`);
+        console.log(`➖ [CẬP NHẬT KÊNH] Đang xóa ${data.removeUserIds.length} thành viên`);
 
         const removePayload = {
           id: datachannel.id,
@@ -312,16 +430,18 @@ export class ChatSocketService {
           ...datachannel,
         };
 
-        const sentCount = await Promise.all(
-          data.removeUserIds.map(uid => emitToUser(uid, 'receiveRemoveChannel', removePayload))
-        );
+        let sentCount = 0;
+        for (const uid of data.removeUserIds) {
+          const sent = await this.emitToUserWithLog(uid, 'receiveRemoveChannel', removePayload, 'XÓA THÀNH VIÊN');
+          if (sent) sentCount++;
+        }
 
-        console.log(`✅ [updateChannel] Sent removal to ${sentCount.filter(Boolean).length} members`);
+        console.log(`📊 [CẬP NHẬT KÊNH] Đã gửi thông báo xóa đến ${sentCount}/${data.removeUserIds.length} thành viên`);
       }
 
-      console.log(`✅ [updateChannel] Channel ${data.channelId} updated successfully`);
+      console.log(`✅ [CẬP NHẬT KÊNH] Cập nhật kênh ${data.channelId} thành công`);
     } catch (err: any) {
-      console.error(`❌ [updateChannel] Error for channel ${data.channelId}:`, err?.message || err);
+      console.error(`❌ [CẬP NHẬT KÊNH] Lỗi khi cập nhật kênh ${data.channelId}:`, err?.message || err);
     }
   }
 
@@ -338,19 +458,9 @@ export class ChatSocketService {
     isPin?: boolean;
     id?: string | number;
   }) {
-    console.log(`🔍 [DEBUG] sendMessageToChannel called with:`, {
-      channelId: message.channelId,
-      type: message.type,
-      text: message.text?.substring(0, 100) + '...',
-      hasJsonData: !!message.json_data,
-      jsonDataType: typeof message.json_data
-    });
-
     const tempId = Date.now();
     const now = new Date().toISOString();
     const typeMsg = message.type ?? 'message';
-    
-    console.log(`🔍 [DEBUG] Message type: ${message.type} -> ${typeMsg}`);
     
     // Emit pending vào room
     const pendingMsg: any = {
@@ -375,66 +485,35 @@ export class ChatSocketService {
       status: 'pending',
     };
 
-    // console.log(`🔍 [DEBUG] Pending message created:`, {
-    //   type: pendingMsg.type,
-    //   fakeID: pendingMsg.fakeID,
-    //   hasJsonData: !!pendingMsg.json_data
-    // });
-
-    // Emit pending message to room
     if (this.server) {
-      //console.log(`🔍 [DEBUG] Emitting pending message to channel ${message.channelId}`);
       this.server.to(message.channelId).emit('receiveMessage', pendingMsg);
-      //console.log(`✅ [DEBUG] Pending message emitted successfully`);
+      console.log(`📤 [GỬI TIN NHẮN] Đã emit pending message vào room ${message.channelId}`);
     } else {
-      console.error(`❌ [DEBUG] Server not available for emitting pending message`);
+      console.error(`❌ [GỬI TIN NHẮN] Server không khả dụng`);
     }
 
-    // Nếu channel chưa active → bật active & gửi cập nhật channel cho members đang online
+    // Nếu channel chưa active → bật active & gửi cập nhật
     if (message.channelData && message.channelData.isChannelActive === false) {
       const activeChannel = { ...message.channelData, isChannelActive: true };
+      console.log(`🔔 [GỬI TIN NHẮN] Channel chưa active, chuẩn bị kích hoạt và gửi đến ${message.channelData.members?.length || 0} thành viên`);
+      
+      let sentCount = 0;
       for (const member of message.channelData.members || []) {
-        const uid = member.id;
-        const statusStr = await this.redis.hget('user_status', uid);
-        if (!statusStr) continue;
-        const status = JSON.parse(statusStr);
-        if (status.online && status.socketId && this.server) {
-          this.server.to(status.socketId).emit('receiveChannel', activeChannel);
-
-          console.log(
-            `📢 Sent activeChannel to user ${uid} at socket ${status.socketId}`,
-          );
-        }
+        const sent = await this.emitToUserWithLog(member.id, 'receiveChannel', activeChannel, 'KÍCH HOẠT KÊNH');
+        if (sent) sentCount++;
       }
+      
+      console.log(`📊 [GỬI TIN NHẮN] Đã gửi active channel đến ${sentCount}/${message.channelData.members?.length || 0} thành viên`);
     }
 
     try {
-      // console.log(`🔍 [DEBUG] Calling chat service with:`, {
-      //   ...message,
-      //   send_at: now,
-      //   json_data_type: typeof message.json_data
-      // });
-
-      // Content moderation đã được xử lý ở chat service
+      // Gửi message qua chat service
       const res: any = await this.gw.exec('chat', 'sendMessage', {
         ...message,
         send_at: now,
       });
       
-      // console.log(`🔍 [DEBUG] Chat service response:`, {
-      //   hasData: !!res?.data,
-      //   responseType: res?.data?.type,
-      //   dataKeys: res?.data ? Object.keys(res.data) : 'no data'
-      // });
-      
       const { channel, ...datas } = res?.data;
-      // console.log(`📨 Message sent in channel ${message.channelId}:`,  {
-      //   ...datas,
-      //   channelId: message.channelId,
-      //   type: typeMsg,
-      //   fakeID: tempId,
-      //   status: 'sent',
-      // });
 
       const finalMessage = {
         ...datas,
@@ -443,51 +522,35 @@ export class ChatSocketService {
         fakeID: tempId,
         isPin: pendingMsg.isPin ?? false,
         isUpdate: message.isUpdate ?? false,
-        id: message.isUpdate ? message.id : null ,
+        id: message.isUpdate ? message.id : null,
         status: pendingMsg.isUpdated ? (typeMsg === 'remove' ? 'remove' : 'updated') : 'sent',
       };
-
-      // console.log(`🔍 [DEBUG] Final message to emit:`, {
-      //   type: finalMessage.type,
-      //   fakeID: finalMessage.fakeID,
-      //   hasJsonData: !!finalMessage.json_data,
-      //   id: finalMessage.id
-      // });
       
-      // Kiểm tra server tồn tại trước khi emit
-      
+      // Emit final message
       this.server.to(message.channelId).emit('receiveMessage', finalMessage);
-      const result = await this.gw.exec('notification', 'send_notification', {
-        ...res,
-        type:'message',
-      });
+      console.log(`✅ [GỬI TIN NHẮN] Đã emit final message vào room ${message.channelId}`);
+      
+      // Gửi notifications
+      if (res?.data) {
+        const notifResult = await this.gw.exec('notification', 'send_notification', {
+          data: res.data,
+          type: 'message',
+        });
 
-      if (result?.data) {
-        for (const notify of result?.data.notifications) {
-        const statusStr = await this.redis.hget('user_status', notify?.userId);
-        if (!statusStr) continue;
-        const status = JSON.parse(statusStr);
-        if (status.online && status.socketId && this.server) {
-          this.server.to(status.socketId).emit('receiveNotification', {
-            ...notify ,
-            fakeID: tempId,
-          });
-          console.log(
-            `📢 Sent channel to user ${notify?.userId} at socket ${status.socketId}`,
-          );
+        if (notifResult?.data?.notifications) {
+          await this.sendNotificationsToUsers(notifResult.data.notifications, 'THÔNG BÁO TIN NHẮN');
+        } else {
+          console.log(`⚠️ [THÔNG BÁO TIN NHẮN] Không có notification nào được tạo`);
         }
       }
-      }
-      await this.incrementUnread(
-        String(message.channelId),
-        String(message.user.id),
-      );
+      
+      await this.incrementUnread(String(message.channelId), String(message.user.id));
+      
     } catch (err: any) {
-      console.error(`❌ [DEBUG] Error sending message to channel ${message.channelId}:`, err);
-      console.error(`❌ [DEBUG] Error details:`, {
-        message: err?.message,
-        stack: err?.stack,
-        originalMessageType: message.type
+      console.error(`❌ [GỬI TIN NHẮN] Lỗi:`, {
+        channel: message.channelId,
+        error: err?.message,
+        type: message.type
       });
       
       if (this.server) {
@@ -496,13 +559,6 @@ export class ChatSocketService {
           status: 'error',
           msg: err?.message || 'Gửi tin nhắn thất bại',
         };
-        
-        console.log(`🔍 [DEBUG] Emitting error message:`, {
-          type: errorMessage.type,
-          fakeID: errorMessage.fakeID,
-          status: errorMessage.status
-        });
-        
         this.server.to(message.channelId).emit('receiveMessage', errorMessage);
       }
     }
@@ -510,18 +566,14 @@ export class ChatSocketService {
 
   /* ===================== UNREAD CORE ===================== */
   private async incrementUnread(channelId: string, senderId: string) {
-    const sockets: any[] = await this.server.fetchSockets(); // tất cả socket đang online
+    const sockets: any[] = await this.server.fetchSockets();
     for (const socket of sockets) {
       const socketId = socket.id;
       const userId = socket.user?.id || socket.data?.user?.id;
       if (!userId || String(userId) === String(senderId)) continue;
 
-      // socket này có đăng ký theo dõi unread cho channelId không?
-      const registeredChannels =
-        await this.getRegisteredUnreadChannels(socketId);
+      const registeredChannels = await this.getRegisteredUnreadChannels(socketId);
       const isReg = registeredChannels.includes(String(channelId));
-
-      // socket này có ở trong room channelId không?
       const isInChannel = socket.rooms.has(String(channelId));
 
       if (isReg && !isInChannel) {
@@ -540,33 +592,35 @@ export class ChatSocketService {
     client.emit('unreadCount', { channelId: String(channelId), count: 0 });
   }
 
-
-   async broadcastWebhook(data: any) {
+  async broadcastWebhook(data: any) {
     try {
       const installationId = data.installationId;
       const tempId = Date.now();
-      if (!installationId) return;
+      
+      console.log(`🔔 [WEBHOOK GITHUB] Đang xử lý webhook:`, {
+        installationId,
+        suKien: data.event,
+        khoLuuTru: data.repository
+      });
 
-      const result = await this.gw.exec('notification', 'send_notification', { ...data ,type:'github' });
-      if (result?.data) {
-        for (const notify of result?.data.notifications) {
-          const statusStr = await this.redis.hget('user_status', notify?.userId);
-          if (!statusStr) continue;
-          const status = JSON.parse(statusStr);
-          if (status.online && status.socketId) {
-            this.server.to(status.socketId).emit('receiveNotification', {
-              ...notify,
-              fakeID: tempId,
-            });
-            console.log('data github notification',{ ...notify});
-            console.log(
-              `📢 Sent channel to user ${notify?.userId} at socket ${status.socketId}`,
-            );
-          }
-        }
-      } 
-    } catch (error) {
-      //console.error(`Error broadcasting webhook: ${error.message}`);
+      if (!installationId) {
+        console.log(`⚠️ [WEBHOOK GITHUB] Không có installation ID, bỏ qua`);
+        return;
+      }
+
+      const result = await this.gw.exec('notification', 'send_notification', { 
+        data: data,
+        type: 'github' 
+      });
+
+      if (result?.data?.notifications) {
+        await this.sendNotificationsToUsers(result.data.notifications, 'WEBHOOK GITHUB');
+      } else {
+        console.log(`⚠️ [WEBHOOK GITHUB] Không có notification nào được tạo`);
+      }
+      
+    } catch (error: any) {
+      console.error(`❌ [WEBHOOK GITHUB] Lỗi:`, error?.message || error);
     }
   }
 }

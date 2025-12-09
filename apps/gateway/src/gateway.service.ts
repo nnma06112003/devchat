@@ -206,12 +206,6 @@ export class GatewayService implements OnModuleInit {
       // Giải mã tất cả ID trong request từ frontend trước khi gửi đến service
       const decryptedData = skipEncryption ? data : this.decryptIdsInData(data);
       
-      if (!skipEncryption && data !== decryptedData) {
-        console.log('🔓 [DECRYPT] Request data:', JSON.stringify({
-          original: data,
-          decrypted: decryptedData
-        }, null, 2));
-      }
 
       const res$ = this.kafka
         .send<any, any>(topic, { cmd, data: decryptedData })
@@ -222,15 +216,11 @@ export class GatewayService implements OnModuleInit {
       // Mã hóa response trước khi trả về (nếu không skip)
       if (!skipEncryption) {
         // Log json_data nếu có
-        if (result?.json_data) {
-          console.log('🔐 [ENCRYPT] Original json_data:', JSON.stringify(result.json_data, null, 2));
-        }
+        
 
         const encryptedResult = this.encryptIdsInData(result);
 
-        if (result?.json_data) {
-          console.log('✅ [ENCRYPT] Encrypted json_data:', JSON.stringify(encryptedResult.json_data, null, 2));
-        }
+        
 
         return encryptedResult;
       }
