@@ -13,12 +13,13 @@ import { Like, Repository, Not } from 'typeorm';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as crypto from 'crypto';
 import Redis from 'ioredis';
-// import * as jose from 'jose'; // replaced with dynamic import in createAppJWT
+import axios from 'axios';
 
 @Injectable()
 export class AuthService {
   private readonly algorithm = 'aes-256-cbc';
   private encryptionKey: Buffer;
+  private readonly recaptchaSecret = process.env.RECAPTCHA_SECRET;
 
   constructor(
     @InjectRepository(User)
@@ -31,6 +32,96 @@ export class AuthService {
     // Khởi tạo encryption key (giống gateway)
     const key = process.env.ID_ENCRYPTION_KEY || 'default-secret-key-32-chars-min';
     this.encryptionKey = crypto.scryptSync(key, 'salt', 32);
+  }
+
+  /**
+   * Xác thực reCAPTCHA token
+   */
+  private async verifyCaptcha(token: string): Promise<boolean> {
+    if (!token || token.trim() === '') {
+      console.log('❌ [CAPTCHA] Token rỗng');
+      throw new RpcException({
+        msg: 'Vui lòng xác thực CAPTCHA',
+        status: 400,
+      });
+    }
+
+    if (!this.recaptchaSecret) {
+      console.error('❌ [CAPTCHA] RECAPTCHA_SECRET chưa được cấu hình');
+      throw new RpcException({
+        msg: 'Cấu hình CAPTCHA không hợp lệ',
+        status: 500,
+      });
+    }
+
+    try {
+      console.log(`🔍 [CAPTCHA] Đang xác thực token: ${token.substring(0, 20)}...`);
+
+      const response = await axios.post(
+        'https://www.google.com/recaptcha/api/siteverify',
+        new URLSearchParams({
+          secret: this.recaptchaSecret,
+          response: token,
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          timeout: 10000,
+        }
+      );
+
+      const { success, score, action, 'error-codes': errorCodes } = response.data;
+
+      console.log(`📊 [CAPTCHA] Kết quả:`, {
+        success,
+        score,
+        action,
+        errorCodes,
+      });
+
+      if (!success) {
+        console.warn(`❌ [CAPTCHA] Xác thực thất bại:`, errorCodes);
+        throw new RpcException({
+          msg: 'CAPTCHA không hợp lệ hoặc đã hết hạn',
+          status: 400,
+        });
+      }
+
+      // Kiểm tra score (reCAPTCHA v3)
+      if (score !== undefined && score < 0.5) {
+        console.warn(`⚠️ [CAPTCHA] Score thấp: ${score}`);
+        throw new RpcException({
+          msg: 'Xác thực CAPTCHA không đạt yêu cầu bảo mật',
+          status: 403,
+        });
+      }
+
+      console.log(`✅ [CAPTCHA] Xác thực thành công - Score: ${score || 'N/A'}`);
+      return true;
+
+    } catch (error: any) {
+      if (error instanceof RpcException) {
+        throw error;
+      }
+
+      console.error(`❌ [CAPTCHA] Lỗi:`, {
+        message: error?.message,
+        code: error?.code,
+      });
+
+      if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+        throw new RpcException({
+          msg: 'Không thể kết nối đến dịch vụ CAPTCHA',
+          status: 504,
+        });
+      }
+
+      throw new RpcException({
+        msg: 'Lỗi xác thực CAPTCHA',
+        status: 500,
+      });
+    }
   }
 
   /**
@@ -187,10 +278,8 @@ export class AuthService {
     await this.mailerService.sendMail({
       to: user.email,
       subject: 'Xác nhận email của bạn',
-      template: 'confirmation', // dùng tên template (không để './')
+      template: 'confirmation',
       context: { name: user.username || 'User', url: frontendConfirmUrl },
-      // text: `Xin chào ${user.username || 'User'}, xác nhận email: ${frontendConfirmUrl}`,
-      // html: `<p>Xin chào ${user.username || 'User'},</p><p><a href="${frontendConfirmUrl}">Xác nhận email</a></p>`,
     });
 
     return { status: 200, msg: 'Đã gửi lại email xác thực' };
@@ -198,58 +287,82 @@ export class AuthService {
 
   async login(loginDto: LoginDto): Promise<any> {
     try {
-    const user: any = await this.userRepository.findByEmail(loginDto.email);
-    if (!user) {
-      throw new RpcException({
-        msg: 'Bạn chưa đăng ký tài khoản . Vui lòng đăng ký trước khi đăng nhập',
-        status: 401,
-      });
-    }
-    if (!user.email_verified) {
-      throw new RpcException({
-        msg: 'Vui lòng xác thực email trước khi đăng nhập',
-        status: 401,
-      });
-    }
+      // ✅ 1. XÁC THỰC CAPTCHA TRƯỚC TIÊN
+      console.log('🔐 [LOGIN] Bắt đầu xác thực CAPTCHA...');
+      if (loginDto.captchaToken) {
+        await this.verifyCaptcha(loginDto.captchaToken);
+        console.log('✅ [LOGIN] CAPTCHA hợp lệ');
+      } else {
+         throw new RpcException({
+          msg: 'Vui lòng xác thực CAPTCHA',
+          status: 401,
+        });
+      }
 
-    if (!user.isActive) {
-      throw new RpcException({
-        msg: 'Tài khoản đã bị vô hiệu hóa',
-        status: 403,
-      });
-    } 
+      // 2. Tìm user
+      console.log(`🔍 [LOGIN] Tìm user với email: ${loginDto.email}`);
+      const user: any = await this.userRepository.findByEmail(loginDto.email);
+      if (!user) {
+        throw new RpcException({
+          msg: 'Bạn chưa đăng ký tài khoản. Vui lòng đăng ký trước khi đăng nhập',
+          status: 401,
+        });
+      }
 
-    const isPasswordValid = await bcrypt.compare(
-      loginDto.password,
-      user.password,
-    );
-    if (!isPasswordValid) {
-      throw new RpcException({
-        msg: 'Tài khoản hoặc mật khẩu không đúng',
-        status: 401,
-      });
-    }
+      // 3. Kiểm tra email verified
+      if (!user.email_verified) {
+        throw new RpcException({
+          msg: 'Vui lòng xác thực email trước khi đăng nhập',
+          status: 401,
+        });
+      }
 
-    const payload: JwtPayload = {
-      sub: this.encryptId(user.id),
-      email: user.email,
-      username: user.username,
-      role: user.role,
-      github_verified: user.github_verified,
-      github_installation_id: user.github_installation_id || null,
-    };
-    const access_token = this.jwtService.sign(payload);
-    const refresh_token = await this.generateAndSaverefresh_token(user);
+      // 4. Kiểm tra account active
+      if (!user.isActive) {
+        throw new RpcException({
+          msg: 'Tài khoản đã bị vô hiệu hóa',
+          status: 403,
+        });
+      }
 
-    return {
-      access_token,
-      refresh_token,
+      // 5. Kiểm tra password
+      console.log('🔐 [LOGIN] Đang xác thực mật khẩu...');
+      const isPasswordValid = await bcrypt.compare(
+        loginDto.password,
+        user.password,
+      );
+      if (!isPasswordValid) {
+        throw new RpcException({
+          msg: 'Tài khoản hoặc mật khẩu không đúng',
+          status: 401,
+        });
+      }
+
+      // 6. Tạo JWT tokens
+      console.log('🎫 [LOGIN] Tạo access token và refresh token...');
+      const payload: JwtPayload = {
+        sub: this.encryptId(user.id),
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        github_verified: user.github_verified,
+        github_installation_id: user.github_installation_id || null,
+      };
+      const access_token = this.jwtService.sign(payload);
+      const refresh_token = await this.generateAndSaverefresh_token(user);
+
+      console.log(`✅ [LOGIN] Đăng nhập thành công cho user: ${user.email} (ID: ${user.id})`);
+
+      return {
+        access_token,
+        refresh_token,
       };
     } catch (error: any) {
       if (error instanceof RpcException) {
         throw error;
       }
 
+      console.error('❌ [LOGIN] Lỗi:', error?.message || error);
       throw new RpcException({
         msg: error?.message || 'Đã xảy ra lỗi trong quá trình đăng nhập',
         status: 500,
@@ -318,6 +431,7 @@ export class AuthService {
       updated_at: user.updated_at,
     };
   }
+  
   private async generateAndSaverefresh_token(user: any): Promise<string> {
     const refresh_token = this.jwtService.sign(
       { sub: this.encryptId(user.id) },
@@ -434,9 +548,6 @@ export class AuthService {
       throw new RpcException({ msg: 'Tài khoản đã bị vô hiệu hóa', status: 403 });
     }
 
-    // if (user.refresh_token) {
-    //   return null;
-    // }
     // Mã hóa sub trước khi tạo JWT
     const payload: JwtPayload = {
       sub: this.encryptId(user.id),
@@ -460,13 +571,11 @@ export class AuthService {
   verifyWebhookSignature(signature: string, rawBody: Buffer | string): void {
     if (!signature) throw new UnauthorizedException('Missing signature');
 
-    // Ensure signature starts with expected prefix
-    const expectedPrefix = 'sha256='; // GitHub uses sha256
+    const expectedPrefix = 'sha256=';
     if (!signature.startsWith(expectedPrefix)) {
       throw new UnauthorizedException('Invalid signature format');
     }
 
-    // Use Buffer for HMAC input
     const payloadBuffer = Buffer.isBuffer(rawBody)
       ? rawBody
       : Buffer.from(rawBody || '', 'utf8');
@@ -479,7 +588,6 @@ export class AuthService {
     const sigBuffer = Buffer.from(signature, 'utf8');
     const digestBuffer = Buffer.from(digest, 'utf8');
 
-    // timingSafeEqual requires same length buffers
     if (sigBuffer.length !== digestBuffer.length) {
       throw new UnauthorizedException('Invalid signature');
     }
@@ -495,7 +603,7 @@ export class AuthService {
     }
   }
 
-  //Upadate password
+  //Update password
   async updatePassword(
     userId: string,
     oldPassword: string,
@@ -524,8 +632,7 @@ export class AuthService {
     return { status: 200, msg: 'Cập nhật mật khẩu thành công' };
   }
 
-
-  async CRUD(userId: any, data: any, method?: string, ): Promise<any> {
+  async CRUD(userId: any, data: any, method?: string): Promise<any> {
     const user: any = await this.userRepository.findById(userId);
 
     if (!user) {
