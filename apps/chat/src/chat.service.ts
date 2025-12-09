@@ -90,7 +90,7 @@ export class ChatService extends BaseService<Message> {
       where: { id: data.id, type: 'group' },
       relations: ['users'],
     });
-
+   
     if (!channel) {
       throw new RpcException({ msg: 'Không tìm thấy kênh công khai', status: 404 });
     }
@@ -103,7 +103,18 @@ export class ChatService extends BaseService<Message> {
       return { msg: 'Bạn đang là thành viên của kênh này', channel };
     }
 
-    channel.users.push(user);
+    const userEntity = await this.userRepo.findOne({ 
+      where: { id: user.id } 
+    });
+
+    if (!userEntity) {
+      throw new RpcException({ 
+        msg: 'Không tìm thấy người dùng', 
+        status: 404 
+      });
+    }
+
+    channel.users.push(userEntity);
     channel.member_count = channel.users.length;
     await this.channelRepo.save(channel);
 

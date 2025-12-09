@@ -246,7 +246,7 @@ export class GatewayController {
       repo,
       sha,
       prompt: prompt ?? '',
-    });
+    }, {waitMs: 90000});
 
     return result;
   }
