@@ -149,48 +149,63 @@ export class GatewayService implements OnModuleInit {
    * Xử lý đệ quy cho object lồng nhau, array và json_data/jsonData
    */
   private encryptIdsInData(data: any): any {
-    if (data === null || data === undefined) {
-      return data;
-    }
+  if (data === null || data === undefined) {
+    return data;
+  }
 
-    // Xử lý array
-    if (Array.isArray(data)) {
-      return data.map(item => this.encryptIdsInData(item));
-    }
+  // Xử lý array
+  if (Array.isArray(data)) {
+    return data.map(item => this.encryptIdsInData(item));
+  }
 
-    // Xử lý object
-    if (typeof data === 'object') {
-      const result: any = {};
-      
-      for (const [key, value] of Object.entries(data)) {
-        // Xử lý đặc biệt cho json_data/jsonData nếu là string → parse → encrypt → stringify
-        if (/json_?data/i.test(key) && typeof value === 'string') {
-          try {
-            const parsed = JSON.parse(value);
-            const encrypted = this.encryptIdsInData(parsed);
-            result[key] = JSON.stringify(encrypted);
-          } catch {
-            result[key] = value; // Nếu không parse được, giữ nguyên
-          }
+  // Xử lý object
+  if (typeof data === 'object') {
+    const result: any = {};
+    
+    for (const [key, value] of Object.entries(data)) {
+      // Xử lý đặc biệt cho json_data/jsonData nếu là string → parse → encrypt → stringify
+      if (/json_?data/i.test(key) && typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          const encrypted = this.encryptIdsInData(parsed);
+          result[key] = JSON.stringify(encrypted);
+        } catch {
+          result[key] = value; // Nếu không parse được, giữ nguyên
         }
-        // Check nếu key chứa "id" và value là string/number → encrypt
-        else if (/id/i.test(key) && (typeof value === 'string' || typeof value === 'number')) {
-          result[key] = this.encryptId(value);
-        } 
-        // Đệ quy cho nested object/array
-        else if (typeof value === 'object') {
-          result[key] = this.encryptIdsInData(value);
-        } 
-        else {
+      }
+      // ✅ Mã hóa cứng các field đặc biệt chứa array ID
+      else if (['assignees', 'relatedMessages', 'relatedmessages'].includes(key.toLowerCase())) {
+        if (Array.isArray(value)) {
+          result[key] = value.map(item => {
+            // Nếu item là string/number → mã hóa
+            if (typeof item === 'string' || typeof item === 'number') {
+              return this.encryptId(item);
+            }
+            // Nếu item là object → đệ quy
+            return this.encryptIdsInData(item);
+          });
+        } else {
           result[key] = value;
         }
       }
-      
-      return result;
+      // Check nếu key chứa "id" và value là string/number → encrypt
+      else if (/id/i.test(key) && (typeof value === 'string' || typeof value === 'number')) {
+        result[key] = this.encryptId(value);
+      } 
+      // Đệ quy cho nested object/array
+      else if (typeof value === 'object') {
+        result[key] = this.encryptIdsInData(value);
+      } 
+      else {
+        result[key] = value;
+      }
     }
-
-    return data;
+    
+    return result;
   }
+
+  return data;
+}
 
   async exec(
     service: string,
