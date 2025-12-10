@@ -177,6 +177,10 @@ export class AuthService {
       throw new RpcException({ status: 400, msg: 'ID không hợp lệ hoặc đã bị thay đổi' });
     }
   }
+
+
+
+  
   async searchUsers(
     user: any,
     params: { key: string; limit?: number },
@@ -1067,4 +1071,298 @@ export class AuthService {
     }
   }
 
+  /**
+   * Tạo mật khẩu ngẫu nhiên mạnh (12 ký tự)
+   */
+  private generateRandomPassword(length: number = 12): string {
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const symbols = '!@#$%^&*';
+    const allChars = uppercase + lowercase + numbers + symbols;
+
+    let password = '';
+    
+    // Đảm bảo có ít nhất 1 ký tự mỗi loại
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+    password += symbols[Math.floor(Math.random() * symbols.length)];
+
+    // Thêm các ký tự ngẫu nhiên còn lại
+    for (let i = password.length; i < length; i++) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+
+    // Shuffle password
+    return password.split('').sort(() => Math.random() - 0.5).join('');
+  }
+
+  /**
+   * Tạo OTP 6 số ngẫu nhiên
+   */
+  private generateOTP(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  /**
+   * Reset mật khẩu - 2 bước với giới hạn 3 lần nhập sai
+   * Bước 1: Gửi OTP (có CAPTCHA)
+   * Bước 2: Xác thực OTP và reset password (KHÔNG cần CAPTCHA)
+   */
+  async resetPassword(
+    email: string, 
+    captchaToken?: string, 
+    otp?: string
+  ): Promise<any> {
+    try {
+      // ============ BƯỚC 1: GỬI OTP ============
+      if (!otp) {
+        console.log('🔐 [RESET PASSWORD - STEP 1] Gửi OTP');
+        
+        // 1.1. Xác thực CAPTCHA (bắt buộc ở bước 1)
+        if (!captchaToken) {
+          throw new RpcException({
+            msg: 'Vui lòng xác thực CAPTCHA',
+            status: 400,
+          });
+        }
+        
+        await this.verifyCaptcha(captchaToken);
+        console.log('✅ [RESET PASSWORD - STEP 1] CAPTCHA hợp lệ');
+
+        // 1.2. Tìm user theo email
+        console.log(`🔍 [RESET PASSWORD - STEP 1] Tìm user với email: ${email}`);
+        const user: any = await this.userRepository.findByEmail(email);
+        
+        if (!user) {
+          throw new RpcException({
+            msg: 'Không tìm thấy tài khoản với email đã cung cấp',
+            status: 404,
+          });
+        }
+
+        // 1.3. Kiểm tra user có active không
+        if (!user.isActive) {
+          throw new RpcException({
+            msg: 'Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên',
+            status: 403,
+          });
+        }
+
+        // 1.4. Tạo OTP 6 số và thời gian hết hạn (5 phút)
+        const otpCode = this.generateOTP();
+        const otpExp = new Date();
+        otpExp.setMinutes(otpExp.getMinutes() + 5); // OTP hết hạn sau 5 phút
+
+        user.otpCode = otpCode;
+        user.otpExp = otpExp;
+        user.otpAttempts = 0; // Reset số lần thử về 0
+        await this.userRepository.save(user);
+        
+        console.log(`🔑 [RESET PASSWORD - STEP 1] Đã tạo OTP: ${otpCode} (hết hạn: ${otpExp.toISOString()})`);
+
+        // 1.5. Gửi email chứa OTP
+        const currentDate = new Date().toLocaleDateString('vi-VN', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        try {
+          await this.mailerService.sendMail({
+            to: user.email,
+            subject: '🔐 Mã OTP đặt lại mật khẩu - DevChat',
+            template: 'otp',
+            context: {
+              name: user.username || 'User',
+              email: user.email,
+              otpCode: otpCode,
+              expiryMinutes: 5,
+              currentDate: currentDate,
+              supportEmail: process.env.SUPPORT_EMAIL || 'support@devchat.com',
+            },
+          });
+
+          console.log(`📧 [RESET PASSWORD - STEP 1] Đã gửi OTP đến: ${user.email}`);
+        } catch (emailError) {
+          console.error(`❌ [RESET PASSWORD - STEP 1] Lỗi gửi email:`, emailError);
+          throw new RpcException({
+            msg: 'Không thể gửi email. Vui lòng thử lại sau',
+            status: 500,
+          });
+        }
+
+        // Tính thời gian hết hạn (timestamp)
+        const expiresAt = otpExp.getTime();
+        const expiresInSeconds = Math.floor((expiresAt - Date.now()) / 1000);
+
+        return {
+          step: 1,
+          email: user.email,
+          expiresAt: expiresAt,
+          expiresInSeconds: expiresInSeconds,
+          maxAttempts: 3,
+          remainingAttempts: 3,
+        };
+      }
+
+      // ============ BƯỚC 2: XÁC THỰC OTP VÀ RESET PASSWORD (KHÔNG CẦN CAPTCHA) ============
+      console.log('🔐 [RESET PASSWORD - STEP 2] Xác thực OTP và reset password (không cần CAPTCHA)');
+
+      // 2.1. Validate OTP format (6 số)
+      if (!/^\d{6}$/.test(otp)) {
+        throw new RpcException({
+          msg: 'Mã OTP không hợp lệ. OTP phải là 6 chữ số',
+          status: 400,
+        });
+      }
+
+      // 2.2. Tìm user theo email
+      console.log(`🔍 [RESET PASSWORD - STEP 2] Tìm user với email: ${email}`);
+      const user: any = await this.userRepository.findByEmail(email);
+      
+      if (!user) {
+        throw new RpcException({
+          msg: 'Không tìm thấy tài khoản với email đã cung cấp',
+          status: 404,
+        });
+      }
+
+      // 2.3. Kiểm tra user có active không
+      if (!user.isActive) {
+        throw new RpcException({
+          msg: 'Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên',
+          status: 403,
+        });
+      }
+
+      // 2.4. Kiểm tra OTP có tồn tại không
+      if (!user.otpCode || !user.otpExp) {
+        throw new RpcException({
+          msg: 'Không tìm thấy mã OTP. Vui lòng yêu cầu gửi lại OTP',
+          status: 400,
+        });
+      }
+
+      // 2.5. Kiểm tra OTP hết hạn chưa
+      const now = new Date();
+      if (now > user.otpExp) {
+        // Xóa OTP đã hết hạn
+        user.otpCode = null;
+        user.otpExp = null;
+        user.otpAttempts = 0;
+        await this.userRepository.save(user);
+        
+        throw new RpcException({
+          msg: 'Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại OTP',
+          status: 400,
+        });
+      }
+
+      // 2.6. Kiểm tra số lần thử (tối đa 3 lần)
+      if (user.otpAttempts >= 3) {
+        // Xóa OTP khi vượt quá số lần thử
+        user.otpCode = null;
+        user.otpExp = null;
+        user.otpAttempts = 0;
+        await this.userRepository.save(user);
+        
+        throw new RpcException({
+          msg: 'Bạn đã nhập sai mã OTP quá 3 lần. Vui lòng yêu cầu gửi lại OTP mới',
+          status: 429,
+        });
+      }
+
+      // 2.7. Kiểm tra OTP có khớp không
+      if (user.otpCode !== otp) {
+        // Tăng số lần thử sai
+        user.otpAttempts = (user.otpAttempts || 0) + 1;
+        const remainingAttempts = 3 - user.otpAttempts;
+        await this.userRepository.save(user);
+        
+        console.log(`❌ [RESET PASSWORD - STEP 2] OTP sai (${user.otpAttempts}/3)`);
+        
+        throw new RpcException({
+          msg: `Mã OTP không chính xác. Bạn còn ${remainingAttempts} lần thử`,
+          status: 400,
+          data: {
+            remainingAttempts: remainingAttempts,
+            maxAttempts: 3
+          }
+        });
+      }
+
+      console.log('✅ [RESET PASSWORD - STEP 2] OTP hợp lệ');
+
+      // 2.8. Tạo mật khẩu ngẫu nhiên (12 ký tự)
+      const newPassword = this.generateRandomPassword(12);
+      console.log(`🔑 [RESET PASSWORD - STEP 2] Đã tạo mật khẩu mới cho user: ${user.email}`);
+
+      // 2.9. Hash password mới
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      user.password = hashedPassword;
+      
+      // 2.10. Xóa OTP, reset attempts và refresh token (force logout)
+      user.otpCode = null;
+      user.otpExp = null;
+      user.otpAttempts = 0;
+      user.refresh_token = null;
+      
+      await this.userRepository.save(user);
+      console.log(`💾 [RESET PASSWORD - STEP 2] Đã cập nhật mật khẩu mới vào database`);
+
+      // 2.11. Gửi email chứa mật khẩu mới
+      const loginUrl = `${process.env.FE_URL}/auth/login`;
+      const currentDate = new Date().toLocaleDateString('vi-VN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      try {
+        await this.mailerService.sendMail({
+          to: user.email,
+          subject: '🔐 Đặt lại mật khẩu - DevChat',
+          template: 'resetpassword',
+          context: {
+            name: user.username || 'User',
+            email: user.email,
+            newPassword: newPassword,
+            loginUrl: loginUrl,
+            currentDate: currentDate,
+            supportEmail: process.env.SUPPORT_EMAIL || 'support@devchat.com',
+          },
+        });
+
+        console.log(`📧 [RESET PASSWORD - STEP 2] Đã gửi email mật khẩu mới đến: ${user.email}`);
+      } catch (emailError) {
+        console.error(`❌ [RESET PASSWORD - STEP 2] Lỗi gửi email:`, emailError);
+        throw new RpcException({
+          msg: 'Không thể gửi email. Vui lòng thử lại sau',
+          status: 500,
+        });
+      }
+
+      return {
+        step: 2,
+        email: user.email,
+      };
+
+    } catch (error: any) {
+      if (error instanceof RpcException) {
+        throw error;
+      }
+
+      console.error('❌ [RESET PASSWORD] Lỗi:', error?.message || error);
+      throw new RpcException({
+        msg: error?.message || 'Đã xảy ra lỗi trong quá trình đặt lại mật khẩu',
+        status: 500,
+      });
+    }
+  }
 }
