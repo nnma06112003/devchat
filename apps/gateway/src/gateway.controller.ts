@@ -323,6 +323,14 @@ export class GatewayController {
     return this.gw.exec('auth', 'login', dto);
   }
 
+
+
+  @Post('auth/reset-password')
+  async resetPassword(@Body() dto: any) {
+    // uỷ quyền cho AuthService: { cmd: 'reset_password' }
+    return this.gw.exec('auth', 'reset_password', dto);
+  }
+
   @Post('auth/register')
   async register(@Body() dto: any) {
     return this.gw.exec('auth', 'register', dto);

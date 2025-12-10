@@ -75,4 +75,14 @@ export class User {
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
+
+ @Column({ type: 'varchar', length: 6, nullable: true })
+  otpCode?: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  otpExp?: Date;
+
+  @Column({ type: 'integer', default: 0 })
+  otpAttempts?: number;
+
 }
