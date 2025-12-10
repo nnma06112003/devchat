@@ -9,7 +9,7 @@ import { JwtPayload } from 'apps/auth/src/interfaces/auth.interface';
 import { RpcException } from '@nestjs/microservices';
 import { User } from '@myorg/entities';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository, Not } from 'typeorm';
+import { Like, Repository, Not, ILike } from 'typeorm';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as crypto from 'crypto';
 import Redis from 'ioredis';
@@ -181,13 +181,14 @@ export class AuthService {
     user: any,
     params: { key: string; limit?: number },
   ): Promise<any[]> {
+    console.log("fack", params)
     const key = (params.key || '').trim();
     const limit = params.limit ?? 10;
     if (!key || !user || !user.id) return [];
     const users = await this.userRepo.find({
       where: [
-        { username: Like(`%${key}%`), id: Not(user.id) },
-        { email: Like(`%${key}%`), id: Not(user.id) },
+        { username: ILike(`%${key}%`), id: Not(user.id) },
+        { email: ILike(`%${key}%`), id: Not(user.id) },
       ],
       take: limit,
     });
