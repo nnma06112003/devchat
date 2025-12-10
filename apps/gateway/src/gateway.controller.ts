@@ -653,14 +653,14 @@ export class GatewayController {
   ) {
     const user = req.user as any;
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
-
+    
     return this.gw.exec('upload', 'getAttachmentsByChannel', {
-      channelId: +channelId,
+      channelId: channelId,
       limit: limit ? +limit : undefined,
       cursor: cursor ? +cursor : undefined,
       filename,
       mimeType,
-      senderId: senderId ? +senderId : undefined,
+      senderId: senderId ? senderId : undefined,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
     });
