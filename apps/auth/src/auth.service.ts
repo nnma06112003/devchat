@@ -181,7 +181,7 @@ export class AuthService {
     user: any,
     params: { key: string; limit?: number },
   ): Promise<any[]> {
-    console.log("fack", params)
+
     const key = (params.key || '').trim();
     const limit = params.limit ?? 10;
     if (!key || !user || !user.id) return [];
